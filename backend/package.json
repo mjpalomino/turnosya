@@ -1,0 +1,38 @@
+{
+  "name": "turnosya-backend",
+  "version": "0.1.0",
+  "description": "TurnosYa API - SaaS de citas y turnos",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "dev": "node --watch --experimental-strip-types src/server.ts",
+    "migrate": "node --experimental-strip-types src/db/migrate.ts",
+    "reminders": "node --experimental-strip-types src/jobs/send-reminders.ts",
+    "charge": "node --experimental-strip-types src/jobs/charge-recurring.ts",
+    "test:wompi": "node --experimental-strip-types src/jobs/test-wompi-sandbox.ts",
+    "test": "node --experimental-strip-types --test test/**/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@fastify/cookie": "11.0.2",
+    "@fastify/cors": "11.1.0",
+    "@fastify/jwt": "10.0.0",
+    "@fastify/rate-limit": "10.3.0",
+    "bcryptjs": "3.0.2",
+    "fastify": "5.12.7",
+    "nodemailer": "^10.2.1",
+    "pg": "8.16.3",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "2.4.6",
+    "@types/node": "24.10.1",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pg": "8.11.10",
+    "typescript": "5.9.3"
+  }
+}
