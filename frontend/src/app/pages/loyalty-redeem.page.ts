@@ -1,5 +1,6 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
+import { UiIconComponent } from '../ui/icon.component';
 import { ApiService } from '../core/api.service';
 
 /**
@@ -9,19 +10,23 @@ import { ApiService } from '../core/api.service';
 @Component({
   selector: 'app-loyalty-redeem',
   standalone: true,
+  imports: [UiIconComponent],
   template: `
-    <div class="container-narrow" style="padding-top:3rem">
-      <div class="card stack" style="text-align:center">
-        <h2>Fidelización</h2>
-        @if (state() === 'loading') { <p class="muted">Sumando tu sello…</p> }
+    <main class="container-narrow" style="padding-block:clamp(2.5rem,9vh,6rem)">
+      <div class="card stack" style="align-items:center;text-align:center;gap:1rem;padding:2.25rem 1.5rem" aria-live="polite">
+        <span class="brand-mark"><app-ui-icon name="gift" /></span>
+        <span class="eyebrow">Programa de fidelización</span>
+        <h1 style="font-size:1.7rem">Tu tarjeta de sellos</h1>
+        @if (state() === 'loading') {
+          <div class="loading-state"><span class="spinner" aria-hidden="true"></span> Sumando tu sello…</div>
+        }
         @if (state() === 'ok') {
-          <p class="badge badge-ok">¡Sello sumado!</p>
-          <p>Llevas {{ stickers() }} / {{ threshold() }}.</p>
+          <div class="booking-done"><app-ui-icon name="check-circle" /> <div><strong>¡Sello sumado!</strong><small>Ya tienes {{ stickers() }} de {{ threshold() }} sellos.</small></div></div>
           @if (rewardReady()) { <p class="badge badge-ok">¡Ya puedes canjear tu premio!</p> }
         }
-        @if (state() === 'error') { <p class="error">{{ error() }}</p> }
+        @if (state() === 'error') { <p class="error" role="alert">{{ error() }}</p> }
       </div>
-    </div>
+    </main>
   `,
 })
 export class LoyaltyRedeemPage implements OnInit {

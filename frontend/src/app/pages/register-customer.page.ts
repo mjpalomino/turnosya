@@ -1,6 +1,8 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { AuthShowcaseComponent } from '../ui/auth-showcase.component';
+import { UiIconComponent } from '../ui/icon.component';
 import { AuthService } from '../core/auth.service';
 import { ApiService } from '../core/api.service';
 import type { PublicSite } from '../core/models';
@@ -9,26 +11,34 @@ import type { PublicSite } from '../core/models';
 @Component({
   selector: 'app-register-customer',
   standalone: true,
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule, RouterLink, AuthShowcaseComponent, UiIconComponent],
   template: `
-    <div class="container-narrow" style="padding-top:2.5rem">
-      <div class="card stack">
-        <div style="text-align:center">
-          <h1 style="color:var(--brand-primary)">Crea tu cuenta</h1>
-          @if (siteName()) { <p class="muted">en {{ siteName() }}</p> }
-        </div>
-        <div class="field"><label>Nombre</label><input class="input" [(ngModel)]="fullName" /></div>
-        <div class="field"><label>Correo</label><input class="input" type="email" [(ngModel)]="email" /></div>
-        <div class="field"><label>Teléfono (opcional)</label><input class="input" [(ngModel)]="phone" /></div>
-        <div class="field"><label>Contraseña</label><input class="input" type="password" [(ngModel)]="password" /></div>
-        @if (error()) { <p class="error">{{ error() }}</p> }
-        <button class="btn btn-primary btn-block" [disabled]="loading()" (click)="submit()">
-          {{ loading() ? 'Creando…' : 'Crear cuenta' }}
-        </button>
-        <p class="muted" style="text-align:center">
-          ¿Ya tienes cuenta? <a routerLink="/login">Ingresa</a> ·
-          <a [routerLink]="['/sitio', slug]">Ver el sitio</a>
-        </p>
+    <div class="auth-page">
+      <div class="auth-layout">
+        <app-auth-showcase />
+        <main class="auth-main">
+          <div class="auth-form-shell">
+            <div class="auth-mobile-brand"><span class="brand-mark"><app-ui-icon name="calendar-check" /></span><span class="brand-wordmark">Turnos<span>Ya</span></span></div>
+            <a [routerLink]="['/sitio', slug]" class="auth-back"><app-ui-icon name="arrow-left" /> Volver al sitio</a>
+            <div class="auth-form-heading">
+              <span class="eyebrow">Registro de cliente</span>
+              <h1>Tu próxima cita comienza aquí.</h1>
+              <p>Regístrate para gestionar tus reservas{{ siteName() ? ' en ' + siteName() : '' }}.</p>
+            </div>
+            <form class="auth-form" (ngSubmit)="submit()">
+              <div class="field"><label for="customer-name">Nombre completo</label><input id="customer-name" name="fullName" class="input" [(ngModel)]="fullName" autocomplete="name" required /></div>
+              <div class="field"><label for="customer-email">Correo electrónico</label><input id="customer-email" name="email" class="input" type="email" [(ngModel)]="email" autocomplete="email" placeholder="nombre&#64;ejemplo.com" required /></div>
+              <div class="field"><label for="customer-phone">Teléfono (opcional)</label><input id="customer-phone" name="phone" class="input" type="tel" [(ngModel)]="phone" autocomplete="tel" /></div>
+              <div class="field"><label for="customer-password">Contraseña</label><input id="customer-password" name="password" class="input" type="password" [(ngModel)]="password" autocomplete="new-password" required /></div>
+              @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+              <button type="submit" class="btn btn-primary btn-lg btn-block" [disabled]="loading()" [attr.aria-busy]="loading()">
+                @if (loading()) { <span class="spinner" aria-hidden="true"></span> Creando cuenta… }
+                @else { Crear mi cuenta <app-ui-icon name="arrow-right" /> }
+              </button>
+            </form>
+            <p class="auth-links">¿Ya tienes una cuenta? <a routerLink="/login">Inicia sesión</a></p>
+          </div>
+        </main>
       </div>
     </div>
   `,

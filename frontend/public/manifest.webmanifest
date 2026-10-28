@@ -1,6 +1,6 @@
 {
-  "name": "frontend",
-  "short_name": "frontend",
+  "name": "TurnosYa · Gestión de reservas",
+  "short_name": "TurnosYa",
   "display": "standalone",
   "scope": "./",
   "start_url": "./",
@@ -53,5 +53,8 @@
       "type": "image/png",
       "purpose": "maskable any"
     }
-  ]
+  ],
+  "theme_color": "#3458E8",
+  "background_color": "#F5F7FB",
+  "description": "Gestiona reservas, servicios, equipos y citas desde TurnosYa."
 }
