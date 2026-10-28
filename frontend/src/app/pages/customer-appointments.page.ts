@@ -70,7 +70,6 @@ import type { Appointment, LoyaltyCard } from '../core/models';
     </div>
   `,
   styles: [`
-    .topbar { background: var(--brand-primary); padding: 1rem 0; }
     .stickers { display:flex; gap:.3rem; flex-wrap:wrap; font-size:1.6rem; color: var(--border); }
     .sticker.filled { color: var(--brand-primary); }
     .review { display:flex; gap:.4rem; align-items:center; flex-wrap:wrap; margin-top:.8rem; }

@@ -292,12 +292,6 @@ interface Loyalty {
       }
     </div>
   `,
-  styles: [`
-    .topbar { background: var(--brand-primary); padding: 1rem 0; }
-    .tabs { display:flex; gap:.5rem; flex-wrap:wrap; }
-    .tab { padding:.5rem 1rem; border:1px solid var(--border); background:var(--surface); border-radius:999px; cursor:pointer; }
-    .tab.active { background:var(--brand-primary); color:#fff; border-color:var(--brand-primary); }
-  `],
 })
 export class OwnerPanelPage implements OnInit {
   private api = inject(ApiService);

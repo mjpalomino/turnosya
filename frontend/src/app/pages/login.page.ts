@@ -17,16 +17,16 @@ import type { Role } from '../core/models';
           <p class="muted">Ingresa a tu cuenta</p>
         </div>
         <div class="field">
-          <label>Correo</label>
-          <input class="input" type="email" [(ngModel)]="email" autocomplete="email" />
+          <label for="login-email">Correo</label>
+          <input id="login-email" class="input" type="email" [(ngModel)]="email" autocomplete="email" (keyup.enter)="submit()" />
         </div>
         <div class="field">
-          <label>Contraseña</label>
-          <input class="input" type="password" [(ngModel)]="password" autocomplete="current-password" />
+          <label for="login-pass">Contraseña</label>
+          <input id="login-pass" class="input" type="password" [(ngModel)]="password" autocomplete="current-password" (keyup.enter)="submit()" />
         </div>
-        @if (error()) { <p class="error">{{ error() }}</p> }
-        <button class="btn btn-primary btn-block" [disabled]="loading()" (click)="submit()">
-          {{ loading() ? 'Ingresando…' : 'Ingresar' }}
+        @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+        <button class="btn btn-primary btn-block" [disabled]="loading()" [attr.aria-busy]="loading()" (click)="submit()">
+          @if (loading()) { <span class="spinner" aria-hidden="true"></span> Ingresando… } @else { Ingresar }
         </button>
         <p class="muted" style="text-align:center">
           ¿Tienes un negocio? <a routerLink="/registro-negocio">Regístralo gratis</a>

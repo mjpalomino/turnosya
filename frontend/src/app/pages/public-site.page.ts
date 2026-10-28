@@ -103,8 +103,8 @@ import type { Availability, PublicSite, Service } from '../core/models';
     }
   `,
   styles: [`
-    .site-header { background: var(--brand-primary); padding: 1rem 0; box-shadow: var(--shadow); }
-    .service-card { cursor: pointer; transition: box-shadow .15s, border-color .15s; }
+    .site-header { background: linear-gradient(100deg, var(--brand-primary), var(--brand-secondary)); padding: 1.1rem 0; box-shadow: var(--shadow-md); }
+    .service-card { cursor: pointer; transition: box-shadow .18s, border-color .18s, transform .18s; }
     .service-card:hover { box-shadow: var(--shadow-lg); }
     .service-card.selected { border-color: var(--brand-primary); box-shadow: var(--shadow-lg); }
     .slots { display: flex; flex-wrap: wrap; gap: .5rem; }
