@@ -23,6 +23,10 @@ SaaS multi-inquilino de gestión de **citas y turnos**. Cada negocio (barbería,
 - Luego **2 planes** que el superadmin gestiona (precio, límites).
 - Cobro **manual** y **automático** (Wompi).
 
+## Novedades v3 (comunidad de negocios)
+
+Ver `CAMBIOS_COMUNIDAD_v3.md`: directorio público con búsqueda por categoría/ciudad/GPS, cuentas de cliente globales, reserva con login, autogestión del negocio (logo cargado, colores, link personalizado, QR), marca de plataforma editable por el superadmin y botón de instalación PWA.
+
 ## Módulos
 
 ### Cliente final

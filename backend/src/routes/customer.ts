@@ -1,6 +1,6 @@
 /**
  * Cuenta y citas del cliente final.
- *  - POST /api/customer/register/:slug   crear cuenta de cliente en un negocio
+ *  - POST /api/customer/register/:slug   crear cuenta de cliente (global) desde el link de un negocio
  *  - GET  /api/customer/appointments     mis citas (próximas e historial)
  *  - POST /api/customer/appointments/:id/cancel   cancelar (respeta antelación)
  *  - POST /api/customer/appointments/:id/review   calificar una cita atendida
@@ -8,10 +8,9 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { query } from '../db/pool.ts';
-import { hashPassword } from '../lib/password.ts';
 import { parseOr400 } from '../lib/validation.ts';
 import { notifyAppointment } from '../lib/notify.ts';
-import type { AuthUser } from '../types/auth.ts';
+import { createGlobalCustomer } from './auth.ts';
 
 const registerSchema = z.object({
   fullName: z.string().min(2).max(100),
@@ -41,34 +40,19 @@ export default async function customerRoutes(app: FastifyInstance): Promise<void
     if (!tenant.rowCount) return reply.code(404).send({ error: 'Sitio no encontrado' });
     const tenantId = tenant.rows[0]!.id;
 
-    const dup = await query(
-      'SELECT 1 FROM users WHERE tenant_id=$1 AND lower(email)=lower($2)',
-      [tenantId, body.email],
-    );
-    if (dup.rowCount) return reply.code(409).send({ error: 'Ese correo ya está registrado' });
-
-    const hash = await hashPassword(body.password);
-    const { rows } = await query<{ id: string }>(
-      `INSERT INTO users (tenant_id, role, email, phone, full_name, password_hash)
-       VALUES ($1,'customer',$2,$3,$4,$5) RETURNING id`,
-      [tenantId, body.email, body.phone ?? null, body.fullName, hash],
-    );
-    const payload: AuthUser = {
-      id: rows[0]!.id,
-      role: 'customer',
-      tenantId,
-      email: body.email,
-      fullName: body.fullName,
-    };
-    return reply.code(201).send({ token: app.jwt.sign(payload), user: payload });
+    const created = await createGlobalCustomer(body, tenantId);
+    if ('error' in created) return reply.code(409).send({ error: created.error });
+    return reply.code(201).send({ token: app.jwt.sign(created.user), user: created.user });
   });
 
   // Mis citas
   app.get('/appointments', customer, async (req) => {
     const { rows } = await query(
       `SELECT a.id, a.starts_at AS "startsAt", a.ends_at AS "endsAt", a.status,
-              s.name AS "serviceName", u.full_name AS "staffName"
+              s.name AS "serviceName", u.full_name AS "staffName",
+              t.name AS "businessName", t.slug AS "businessSlug"
        FROM appointments a
+       JOIN tenants t ON t.id=a.tenant_id
        JOIN services s ON s.id=a.service_id
        JOIN staff_profiles sp ON sp.id=a.staff_id
        JOIN users u ON u.id=sp.user_id

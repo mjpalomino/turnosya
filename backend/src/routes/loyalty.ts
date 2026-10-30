@@ -14,8 +14,12 @@
  *  - PUT  /api/loyalty/settings            (owner) editar reglas
  *  - POST /api/loyalty/token               (staff) generar QR de un solo uso
  *  - POST /api/loyalty/redeem-token        (customer) sumar sticker al escanear
- *  - GET  /api/loyalty/card                (customer) ver su tarjeta
- *  - POST /api/loyalty/redeem-reward       (customer) canjear premio
+ *  - GET  /api/loyalty/card                (customer) ver su tarjeta (?tenantId opcional)
+ *  - GET  /api/loyalty/cards               (customer) todas sus tarjetas, una por negocio
+ *  - POST /api/loyalty/redeem-reward       (customer) canjear premio ({ tenantId } opcional)
+ *
+ * Las cuentas de cliente son globales: el negocio se toma del QR escaneado
+ * o del tenantId indicado (para cuentas antiguas, de su propio tenant_id).
  */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -32,6 +36,8 @@ const settingsSchema = z.object({
 });
 
 const redeemTokenSchema = z.object({ token: z.string().min(10).max(200) });
+
+const tenantRefSchema = z.object({ tenantId: z.string().uuid().optional() });
 
 const TOKEN_TTL_MINUTES = 5;
 
@@ -102,19 +108,25 @@ export default async function loyaltyRoutes(app: FastifyInstance): Promise<void>
   app.post('/redeem-token', customer, async (req, reply) => {
     const body = parseOr400(redeemTokenSchema, req.body, reply);
     if (!body) return;
-    const tenantId = req.user.tenantId;
-    if (!tenantId) return reply.code(400).send({ error: 'Cliente sin negocio' });
+    let tenantId = '';
 
     try {
       const out = await withTransaction(async (client) => {
-        // bloquea el token para evitar doble uso concurrente
-        const tok = await client.query<{ id: string }>(
-          `SELECT id FROM loyalty_tokens
-            WHERE token=$1 AND tenant_id=$2 AND used_at IS NULL AND expires_at > now()
+        // bloquea el token para evitar doble uso concurrente; el negocio sale del propio token
+        const tok = await client.query<{ id: string; tenant_id: string }>(
+          `SELECT id, tenant_id FROM loyalty_tokens
+            WHERE token=$1 AND used_at IS NULL AND expires_at > now()
+              AND ($2::uuid IS NULL OR tenant_id = $2::uuid)
             FOR UPDATE`,
-          [body.token, tenantId],
+          [body.token, req.user.tenantId],
         );
         if (!tok.rowCount) throw new Error('TOKEN_INVALID');
+        tenantId = tok.rows[0]!.tenant_id;
+        await client.query(
+          `INSERT INTO customer_businesses (customer_id, tenant_id) VALUES ($1,$2)
+           ON CONFLICT (customer_id, tenant_id) DO UPDATE SET last_seen_at = now()`,
+          [req.user.id, tenantId],
+        );
 
         await client.query(
           'UPDATE loyalty_tokens SET used_at=now(), used_by=$1 WHERE id=$2',
@@ -156,9 +168,29 @@ export default async function loyaltyRoutes(app: FastifyInstance): Promise<void>
   });
 
   // --- Ver tarjeta (customer) ---
+  app.get('/cards', customer, async (req) => {
+    const { rows } = await query(
+      `SELECT t.id AS "tenantId", t.name AS "businessName", t.slug AS "businessSlug",
+              coalesce(c.stickers, 0) AS stickers, coalesce(c.rewards_earned, 0) AS "rewardsEarned",
+              ls.stickers_for_reward AS threshold, ls.reward_label AS "rewardLabel", ls.enabled
+         FROM loyalty_settings ls
+         JOIN tenants t ON t.id = ls.tenant_id
+         LEFT JOIN loyalty_cards c ON c.tenant_id = t.id AND c.customer_id = $1
+        WHERE ls.enabled = true AND t.status = 'active' AND (
+              c.id IS NOT NULL
+           OR EXISTS (SELECT 1 FROM customer_businesses cb WHERE cb.customer_id=$1 AND cb.tenant_id=t.id)
+           OR t.id = $2::uuid)
+        ORDER BY coalesce(c.last_sticker_at, c.created_at) DESC NULLS LAST, t.name`,
+      [req.user.id, req.user.tenantId],
+    );
+    return rows;
+  });
+
   app.get('/card', customer, async (req, reply) => {
-    const tenantId = req.user.tenantId;
-    if (!tenantId) return reply.code(400).send({ error: 'Cliente sin negocio' });
+    const ref = parseOr400(tenantRefSchema, req.query, reply);
+    if (!ref) return;
+    const tenantId = ref.tenantId ?? req.user.tenantId;
+    if (!tenantId) return reply.code(400).send({ error: 'Indica el negocio' });
     const card = await query<{ stickers: number; rewards_earned: number }>(
       `SELECT stickers, rewards_earned FROM loyalty_cards WHERE tenant_id=$1 AND customer_id=$2`,
       [tenantId, req.user.id],
@@ -178,8 +210,10 @@ export default async function loyaltyRoutes(app: FastifyInstance): Promise<void>
 
   // --- Canjear premio (customer) ---
   app.post('/redeem-reward', customer, async (req, reply) => {
-    const tenantId = req.user.tenantId;
-    if (!tenantId) return reply.code(400).send({ error: 'Cliente sin negocio' });
+    const ref = parseOr400(tenantRefSchema, req.body ?? {}, reply);
+    if (!ref) return;
+    const tenantId = ref.tenantId ?? req.user.tenantId;
+    if (!tenantId) return reply.code(400).send({ error: 'Indica el negocio' });
 
     const threshold = await query<{ stickers_for_reward: number }>(
       'SELECT stickers_for_reward FROM loyalty_settings WHERE tenant_id=$1',

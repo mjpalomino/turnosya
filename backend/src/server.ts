@@ -20,6 +20,9 @@ import superadminRoutes from './routes/superadmin.ts';
 import tenantRoutes from './routes/tenant.ts';
 import customerRoutes from './routes/customer.ts';
 import billingRoutes from './routes/billing.ts';
+import directoryRoutes from './routes/directory.ts';
+import mediaRoutes from './routes/media.ts';
+import platformRoutes from './routes/platform.ts';
 
 export async function buildServer() {
   const app = Fastify({
@@ -61,6 +64,9 @@ export async function buildServer() {
   // Rutas de negocio
   await app.register(authRoutes, { prefix: '/api/auth' });
   await app.register(publicRoutes, { prefix: '/api/public' });
+  await app.register(directoryRoutes, { prefix: '/api/directory' });
+  await app.register(platformRoutes, { prefix: '/api/platform' });
+  await app.register(mediaRoutes, { prefix: '/api/media' });
   await app.register(customerRoutes, { prefix: '/api/customer' });
   await app.register(serviceRoutes, { prefix: '/api/services' });
   await app.register(staffRoutes, { prefix: '/api/staff' });

@@ -10,7 +10,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { query } from '../db/pool.ts';
-import { parseOr400 } from '../lib/validation.ts';
+import { hexColorSchema, imageUrlSchema, parseOr400 } from '../lib/validation.ts';
 
 const planSchema = z.object({
   name: z.string().min(1).max(60),
@@ -32,9 +32,11 @@ const subSchema = z.object({
 });
 
 const brandingSchema = z.object({
-  brandName: z.string().min(1).max(60),
-  logoUrl: z.string().url().nullable().optional(),
-  primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  brandName: z.string().trim().min(1).max(60),
+  logoUrl: imageUrlSchema.nullable().optional(),
+  primaryColor: hexColorSchema,
+  secondaryColor: hexColorSchema,
+  tagline: z.string().trim().max(140).nullable().optional(),
 });
 
 export default async function superadminRoutes(app: FastifyInstance): Promise<void> {
@@ -80,10 +82,12 @@ export default async function superadminRoutes(app: FastifyInstance): Promise<vo
     const { rows } = await query(
       `SELECT t.id, t.slug, t.name, t.status, t.created_at AS "createdAt",
               s.status AS "subStatus", s.trial_ends_at AS "trialEndsAt",
-              s.current_period_end AS "currentPeriodEnd", p.name AS "planName"
+              s.current_period_end AS "currentPeriodEnd", p.name AS "planName",
+              t.city, t.is_listed AS "isListed", c.name AS "categoryName"
        FROM tenants t
        LEFT JOIN subscriptions s ON s.tenant_id = t.id
        LEFT JOIN plans p ON p.id = s.plan_id
+       LEFT JOIN business_categories c ON c.id = t.category_id
        ORDER BY t.created_at DESC`,
     );
     return rows;
@@ -114,7 +118,8 @@ export default async function superadminRoutes(app: FastifyInstance): Promise<vo
   // --- Marca de la plataforma ---
   app.get('/branding', sa, async () => {
     const { rows } = await query(
-      `SELECT brand_name AS "brandName", logo_url AS "logoUrl", primary_color AS "primaryColor"
+      `SELECT brand_name AS "brandName", logo_url AS "logoUrl", primary_color AS "primaryColor",
+              secondary_color AS "secondaryColor", tagline
        FROM platform_branding WHERE id=1`,
     );
     return rows[0];
@@ -124,8 +129,9 @@ export default async function superadminRoutes(app: FastifyInstance): Promise<vo
     const b = parseOr400(brandingSchema, req.body, reply);
     if (!b) return;
     await query(
-      `UPDATE platform_branding SET brand_name=$1, logo_url=$2, primary_color=$3, updated_at=now() WHERE id=1`,
-      [b.brandName, b.logoUrl ?? null, b.primaryColor],
+      `UPDATE platform_branding SET brand_name=$1, logo_url=$2, primary_color=$3,
+              secondary_color=$4, tagline=$5, updated_at=now() WHERE id=1`,
+      [b.brandName, b.logoUrl ?? null, b.primaryColor, b.secondaryColor, b.tagline || null],
     );
     return { ok: true };
   });
