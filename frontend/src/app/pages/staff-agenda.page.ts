@@ -3,9 +3,10 @@ import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import QRCode from 'qrcode';
 import { UiIconComponent } from '../ui/icon.component';
+import { BrandLockupComponent } from '../ui/brand-lockup.component';
 import type { Appointment } from '../core/models';
 
 interface ScheduleSlot { weekday: number; startTime: string; endTime: string; }
@@ -20,10 +21,10 @@ interface TimeOff { id: string; startsAt: string; endsAt: string; reason?: strin
 @Component({
   selector: 'app-staff-agenda',
   standalone: true,
-  imports: [DatePipe, FormsModule, UiIconComponent],
+  imports: [DatePipe, FormsModule, UiIconComponent, BrandLockupComponent, RouterLink],
   template: `
     <a class="skip-link" href="#main-content">Saltar al contenido</a>
-    <header class="topbar"><div class="container topbar-inner"><div class="topbar-brand"><span class="brand-mark"><app-ui-icon name="calendar-check" /></span><div class="brand-stack"><span class="brand-wordmark">Turnos<span>Ya</span></span><span class="brand-small">Espacio de trabajo</span></div></div><div class="topbar-actions"><span class="role-badge">Colaborador</span><button class="btn btn-subtle btn-sm" (click)="logout()"><app-ui-icon name="logout" /> Salir</button></div></div></header>
+    <header class="topbar"><div class="container topbar-inner"><a routerLink="/" class="topbar-brand" aria-label="Ir al inicio"><app-brand-lockup subtitle="Espacio de trabajo" /></a><div class="topbar-actions"><span class="role-badge">Colaborador</span><button class="btn btn-subtle btn-sm" (click)="logout()"><app-ui-icon name="logout" /> Salir</button></div></div></header>
     <main id="main-content" class="container page-shell section-stack">
       <div class="page-hero"><div><span class="eyebrow">Espacio del colaborador</span><h1>Tu agenda, bajo control.</h1><p>Consulta tus citas, revisa tu horario y administra tus bloqueos.</p></div></div>
       <nav class="tabs" aria-label="Secciones de tu agenda">

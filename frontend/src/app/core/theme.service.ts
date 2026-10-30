@@ -1,12 +1,22 @@
 import { Injectable } from '@angular/core';
 
 /**
- * Applies tenant colors only while their public booking page is shown.
- * Determines a readable foreground for the custom primary brand color.
- * The account dashboards keep the neutral TurnosYa design language.
+ * Colores de marca en variables CSS.
+ *  - La plataforma (superadmin) define la paleta por defecto: setPlatform().
+ *  - Un negocio la reemplaza solo mientras se muestra su página: apply().
+ *  - reset() vuelve a la paleta de la plataforma (o a la del CSS si no hay).
+ * Calcula un color de texto legible sobre el color principal.
  */
 @Injectable({ providedIn: 'root' })
 export class ThemeService {
+  private platform: { primary: string; secondary: string } | null = null;
+
+  /** Paleta global definida por el superadmin. */
+  setPlatform(primary?: string | null, secondary?: string | null): void {
+    this.platform = primary ? { primary, secondary: secondary || primary } : null;
+    this.reset();
+  }
+
   apply(primary?: string | null, secondary?: string | null): void {
     const root = document.documentElement;
     if (primary) {
@@ -25,6 +35,7 @@ export class ThemeService {
     root.style.removeProperty('--brand-secondary');
     root.style.removeProperty('--brand-primary-contrast');
     root.style.removeProperty('--brand-ink');
+    if (this.platform) this.apply(this.platform.primary, this.platform.secondary);
   }
 
   /** Convert #RGB / #RRGGBB to channels for contrast calculations. */
@@ -44,7 +55,7 @@ export class ThemeService {
   }
 
   /** The foreground for a solid button always reaches 4.5:1. */
-  private foregroundFor(value: string): string | null {
+  foregroundFor(value: string): string | null {
     const channels = this.channels(value);
     if (!channels) return null;
     const luminance = this.luminance(channels);

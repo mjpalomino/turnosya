@@ -4,29 +4,33 @@ import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { UiIconComponent } from '../ui/icon.component';
+import { BrandLockupComponent } from '../ui/brand-lockup.component';
 import type { Appointment, LoyaltyCard } from '../core/models';
 
 /** Panel del cliente: sus citas y su tarjeta de fidelización. */
 @Component({
   selector: 'app-customer-appointments',
   standalone: true,
-  imports: [DatePipe, RouterLink, UiIconComponent],
+  imports: [DatePipe, RouterLink, UiIconComponent, BrandLockupComponent],
   template: `
     <a class="skip-link" href="#main-content">Saltar al contenido</a>
-    <header class="topbar"><div class="container topbar-inner"><div class="topbar-brand"><span class="brand-mark"><app-ui-icon name="calendar-check" /></span><div class="brand-stack"><span class="brand-wordmark">Turnos<span>Ya</span></span><span class="brand-small">Tus reservas</span></div></div><div class="topbar-actions"><span class="role-badge">Cliente</span><button class="btn btn-subtle btn-sm" (click)="logout()"><app-ui-icon name="logout" /> Salir</button></div></div></header>
+    <header class="topbar"><div class="container topbar-inner"><a routerLink="/" class="topbar-brand" aria-label="Ir al inicio"><app-brand-lockup subtitle="Tus reservas" /></a><div class="topbar-actions"><span class="role-badge">Cliente</span><button class="btn btn-subtle btn-sm" (click)="logout()"><app-ui-icon name="logout" /> Salir</button></div></div></header>
     <main id="main-content" class="container page-shell section-stack">
       <div class="page-hero"><div><span class="eyebrow">Mi espacio personal</span><h1>Tus citas, siempre a mano.</h1><p>Consulta tus reservas, califica tus experiencias y disfruta tus beneficios.</p></div></div>
-      @if (card(); as c) {
-        @if (c.enabled) {
-          <section class="card loyalty-card section-stack" aria-labelledby="loyalty-card-title" style="gap:.85rem">
-            <div class="panel-head"><div><span class="eyebrow">Tus beneficios</span><h2 id="loyalty-card-title" style="font-size:1.25rem;margin-top:.35rem">Tarjeta de fidelización</h2><p class="muted" style="margin-top:.35rem">Acumula {{ c.threshold }} sellos para {{ c.rewardLabel }}.</p></div><span class="metric-icon"><app-ui-icon name="gift" /></span></div>
-            <div class="loyalty-progress" [attr.aria-label]="c.stickers + ' de ' + c.threshold + ' sellos acumulados'" role="img">
-              @for (i of range(c.threshold); track i) { <span class="sticker" [class.filled]="i < c.stickers" aria-hidden="true"><app-ui-icon name="star" /></span> }
-            </div>
-            <div class="data-pair"><span class="badge badge-neutral">{{ c.stickers }} / {{ c.threshold }} sellos</span><a routerLink="/fidelizacion">Escanear QR para sumar un sello <app-ui-icon name="arrow-right" /></a></div>
-            @if (c.stickers >= c.threshold) { <div><button class="btn btn-primary" (click)="redeem()"><app-ui-icon name="gift" /> Canjear {{ c.rewardLabel }}</button></div> }
-          </section>
-        }
+      <div class="customer-cta card">
+        <span class="metric-icon"><app-ui-icon name="compass" /></span>
+        <div><strong>¿Necesitas otro turno?</strong><p class="muted">Explora los negocios de la comunidad y reserva en segundos.</p></div>
+        <a class="btn btn-primary" routerLink="/">Explorar negocios <app-ui-icon name="arrow-right" /></a>
+      </div>
+      @for (c of cards(); track c.tenantId) {
+        <section class="card loyalty-card section-stack" [attr.aria-label]="'Tarjeta de fidelización de ' + c.businessName" style="gap:.85rem">
+          <div class="panel-head"><div><span class="eyebrow">Tarjeta de fidelización</span><h2 style="font-size:1.25rem;margin-top:.35rem">{{ c.businessName }}</h2><p class="muted" style="margin-top:.35rem">Acumula {{ c.threshold }} sellos para {{ c.rewardLabel }}.</p></div><span class="metric-icon"><app-ui-icon name="gift" /></span></div>
+          <div class="loyalty-progress" [attr.aria-label]="c.stickers + ' de ' + c.threshold + ' sellos acumulados'" role="img">
+            @for (i of range(c.threshold); track i) { <span class="sticker" [class.filled]="i < c.stickers" aria-hidden="true"><app-ui-icon name="star" /></span> }
+          </div>
+          <div class="data-pair"><span class="badge badge-neutral">{{ c.stickers }} / {{ c.threshold }} sellos</span><a [routerLink]="['/', c.businessSlug]">Pedir turno aquí <app-ui-icon name="arrow-right" /></a></div>
+          @if (c.stickers >= c.threshold) { <div><button class="btn btn-primary" (click)="redeem(c)"><app-ui-icon name="gift" /> Canjear {{ c.rewardLabel }}</button></div> }
+        </section>
       }
       <section class="section-stack" aria-labelledby="customer-appts-title">
         <div class="section-heading"><div><h2 id="customer-appts-title">Historial de reservas</h2><p>Próximas y pasadas, todas en un lugar.</p></div><span class="badge badge-neutral">{{ appts().length }} citas</span></div>
@@ -34,7 +38,7 @@ import type { Appointment, LoyaltyCard } from '../core/models';
           @for (a of appts(); track a.id) {
             <article class="card section-stack" style="gap:1rem">
               <div class="record-card" style="padding:0;border:0;box-shadow:none">
-                <div class="record-main"><strong class="record-title">{{ a.serviceName }}</strong><span class="record-meta"><app-ui-icon name="calendar" /> {{ a.startsAt | date:'EEE d MMM, HH:mm' }}</span>@if (a.staffName) { <span class="record-meta">Con {{ a.staffName }}</span> }<span class="badge" [class]="badgeClass(a.status)">{{ label(a.status) }}</span></div>
+                <div class="record-main">@if (a.businessName) { <a class="record-business" [routerLink]="['/', a.businessSlug]"><app-ui-icon name="store" /> {{ a.businessName }}</a> }<strong class="record-title">{{ a.serviceName }}</strong><span class="record-meta"><app-ui-icon name="calendar" /> {{ a.startsAt | date:'EEE d MMM, HH:mm' }}</span>@if (a.staffName) { <span class="record-meta">Con {{ a.staffName }}</span> }<span class="badge" [class]="badgeClass(a.status)">{{ label(a.status) }}</span></div>
                 @if (a.status === 'booked' || a.status === 'confirmed') { <button class="btn btn-outline-danger btn-sm" (click)="cancel(a)">Cancelar cita</button> }
               </div>
               @if (a.status === 'completed' && !reviewed().has(a.id)) {
@@ -53,7 +57,7 @@ import type { Appointment, LoyaltyCard } from '../core/models';
               @if (reviewed().has(a.id)) { <span class="badge badge-ok" role="status"><app-ui-icon name="check-circle" /> ¡Gracias por tu reseña!</span> }
             </article>
           }
-          @if (appts().length === 0) { <div class="empty-state"><span class="empty-icon"><app-ui-icon name="calendar" /></span><h3>Todavía no tienes citas</h3><p>Tus próximas reservas aparecerán aquí.</p></div> }
+          @if (appts().length === 0) { <div class="empty-state"><span class="empty-icon"><app-ui-icon name="calendar" /></span><h3>Todavía no tienes citas</h3><p>Tus próximas reservas aparecerán aquí.</p><a class="btn btn-primary" style="margin-top:1rem" routerLink="/">Buscar un negocio</a></div> }
         </div>
       </section>
       @if (feedback(); as f) {
@@ -72,7 +76,7 @@ export class CustomerAppointmentsPage implements OnInit {
   private router = inject(Router);
 
   appts = signal<Appointment[]>([]);
-  card = signal<LoyaltyCard | null>(null);
+  cards = signal<LoyaltyCard[]>([]);
   reviewed = signal<Set<string>>(new Set());
   ratingFor = signal<Record<string, number>>({});
   commentFor = signal<Record<string, string>>({});
@@ -80,7 +84,7 @@ export class CustomerAppointmentsPage implements OnInit {
 
   ngOnInit(): void {
     this.load();
-    this.api.get<LoyaltyCard>('/loyalty/card').subscribe({ next: (c) => this.card.set(c) });
+    this.loadCards();
   }
 
   load(): void {
@@ -94,9 +98,13 @@ export class CustomerAppointmentsPage implements OnInit {
     });
   }
 
-  redeem(): void {
-    this.api.post('/loyalty/redeem-reward', {}).subscribe({
-      next: () => this.api.get<LoyaltyCard>('/loyalty/card').subscribe({ next: (c) => this.card.set(c) }),
+  loadCards(): void {
+    this.api.get<LoyaltyCard[]>('/loyalty/cards').subscribe({ next: (c) => this.cards.set(c) });
+  }
+
+  redeem(c: LoyaltyCard): void {
+    this.api.post('/loyalty/redeem-reward', { tenantId: c.tenantId }).subscribe({
+      next: () => { this.notify('¡Premio canjeado! Muéstralo en el negocio.', 'ok'); this.loadCards(); },
       error: (e) => this.notify(e?.error?.error ?? 'No se pudo canjear.'),
     });
   }
@@ -131,5 +139,5 @@ export class CustomerAppointmentsPage implements OnInit {
   range(n: number): number[] { return Array.from({ length: n }, (_, i) => i); }
   private notify(message: string, type: 'error' | 'ok' = 'error'): void { this.feedback.set({ message, type }); }
 
-  logout(): void { this.auth.logout(); this.router.navigate(['/login']); }
+  logout(): void { this.auth.logout(); this.router.navigate(['/']); }
 }

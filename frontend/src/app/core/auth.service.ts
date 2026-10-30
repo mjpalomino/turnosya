@@ -33,10 +33,36 @@ export class AuthService {
     email: string;
     password: string;
     phone?: string;
+    categoryId?: string;
+    city?: string;
   }): Observable<LoginResponse> {
     return this.http
       .post<LoginResponse>(`${environment.apiUrl}/auth/register-business`, payload)
       .pipe(tap((res) => this.persist(res)));
+  }
+
+  /** Cuenta de cliente global: sirve para pedir turno en cualquier negocio. */
+  registerCustomerGlobal(payload: { fullName: string; email: string; password: string; phone?: string }): Observable<LoginResponse> {
+    return this.http
+      .post<LoginResponse>(`${environment.apiUrl}/auth/register-customer`, payload)
+      .pipe(tap((res) => this.persist(res)));
+  }
+
+  /** Página de inicio según el rol. */
+  homeFor(role: Role | null): string {
+    switch (role) {
+      case 'superadmin': return '/admin';
+      case 'owner': return '/panel';
+      case 'staff': return '/mi-agenda';
+      case 'customer': return '/mis-citas';
+      default: return '/';
+    }
+  }
+
+  /** Solo se aceptan rutas internas como destino después del login (evita redirecciones abiertas). */
+  safeReturnUrl(url: string | null | undefined): string | null {
+    if (!url || !url.startsWith('/') || url.startsWith('//') || url.includes('://')) return null;
+    return url;
   }
 
   registerCustomer(

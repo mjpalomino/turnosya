@@ -25,11 +25,20 @@ export interface Service {
   isActive?: boolean;
 }
 
+export interface CategoryRef { slug: string; name: string; icon: string; }
+
 export interface PublicSite {
   name: string;
   timezone: string;
+  city?: string | null;
+  tagline?: string | null;
+  location?: { lat: number; lng: number } | null;
+  category?: CategoryRef | null;
+  rating?: number | null;
+  reviews?: number;
   branding: {
     logoUrl?: string | null;
+    coverUrl?: string | null;
     primaryColor: string;
     secondaryColor: string;
     phone?: string | null;
@@ -37,8 +46,47 @@ export interface PublicSite {
     email?: string | null;
     address?: string | null;
     about?: string | null;
+    instagram?: string | null;
+    website?: string | null;
   } | null;
   services: Service[];
+  staff?: { id: string; fullName: string; title?: string | null }[];
+}
+
+/** Categoría (tipo de negocio) del directorio. */
+export interface Category { id: string; slug: string; name: string; icon: string; count: number; }
+
+/** Tarjeta de negocio en el directorio público. */
+export interface DirectoryBusiness {
+  slug: string;
+  name: string;
+  city: string | null;
+  tagline: string | null;
+  address: string | null;
+  about: string | null;
+  category: CategoryRef | null;
+  logoUrl: string | null;
+  coverUrl: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  rating: number | null;
+  reviews: number;
+  servicesCount: number;
+  minPrice: number | null;
+  hasLocation: boolean;
+  distanceKm: number | null;
+  hasWhatsapp: boolean;
+}
+
+export interface DirectoryPage { total: number; items: DirectoryBusiness[]; }
+
+/** Marca de la plataforma (definida por el superadmin). */
+export interface PlatformBranding {
+  brandName: string;
+  logoUrl: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  tagline: string | null;
 }
 
 export interface AvailabilityOption {
@@ -61,9 +109,14 @@ export interface Appointment {
   staffName?: string;
   customerName?: string;
   customerPhone?: string;
+  businessName?: string;
+  businessSlug?: string;
 }
 
 export interface LoyaltyCard {
+  tenantId?: string;
+  businessName?: string;
+  businessSlug?: string;
   enabled: boolean;
   stickers: number;
   rewardsEarned: number;
@@ -92,4 +145,7 @@ export interface TenantRow {
   trialEndsAt?: string;
   currentPeriodEnd?: string;
   planName?: string;
+  categoryName?: string | null;
+  city?: string | null;
+  isListed?: boolean;
 }

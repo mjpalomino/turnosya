@@ -1,10 +1,13 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { BusinessProfileComponent } from '../owner/business-profile.component';
+import { ShareLinkComponent } from '../owner/share-link.component';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { UiIconComponent } from '../ui/icon.component';
+import { BrandLockupComponent } from '../ui/brand-lockup.component';
 import type { Appointment, Plan, Service } from '../core/models';
 
 interface Payment {
@@ -28,16 +31,7 @@ declare global {
   }
 }
 
-interface Branding {
-  logoUrl?: string | null;
-  primaryColor: string;
-  secondaryColor: string;
-  phone?: string | null;
-  whatsappNumber?: string | null;
-  email?: string | null;
-  address?: string | null;
-  about?: string | null;
-}
+interface Onboarding { hasLogo: boolean; hasCategory: boolean; hasLocation: boolean; hasContact: boolean; services: number; bookableStaff: number; isListed: boolean; }
 interface StaffRow { id: string; fullName: string; email: string; title?: string; isActive: boolean; }
 interface Summary { today: number; upcoming: number; staff: number; services: number; }
 interface Settings {
@@ -49,17 +43,17 @@ interface Loyalty {
   rewardLabel: string; cardExpiryDays: number | null;
 }
 
-/** Panel del dueño: resumen, servicios, empleados, branding. */
+/** Panel del dueño: resumen, citas, autogestión del negocio, link/QR, servicios, empleados. */
 @Component({
   selector: 'app-owner-panel',
   standalone: true,
-  imports: [FormsModule, DecimalPipe, DatePipe, UiIconComponent],
+  imports: [FormsModule, DecimalPipe, DatePipe, UiIconComponent, BrandLockupComponent, RouterLink, BusinessProfileComponent, ShareLinkComponent],
   template: `
     <a class="skip-link" href="#main-content">Saltar al contenido</a>
     <header class="topbar">
       <div class="container topbar-inner">
-        <div class="topbar-brand"><span class="brand-mark"><app-ui-icon name="calendar-check" /></span><div class="brand-stack"><span class="brand-wordmark">Turnos<span>Ya</span></span><span class="brand-small">Espacio de gestión</span></div></div>
-        <div class="topbar-actions"><span class="role-badge">Propietario</span><button class="btn btn-subtle btn-sm" (click)="logout()"><app-ui-icon name="logout" /> Salir</button></div>
+        <a routerLink="/" class="topbar-brand" aria-label="Ir al inicio"><app-brand-lockup subtitle="Espacio de gestión" /></a>
+        <div class="topbar-actions">@if (mySlug()) { <a class="btn btn-secondary btn-sm" [href]="'/' + mySlug()" target="_blank" rel="noopener noreferrer"><app-ui-icon name="eye" /> <span class="mk-hide-xs">Ver mi página</span></a> }<span class="role-badge">Propietario</span><button class="btn btn-subtle btn-sm" (click)="logout()"><app-ui-icon name="logout" /> Salir</button></div>
       </div>
     </header>
     <main id="main-content" class="container page-shell section-stack">
@@ -72,6 +66,30 @@ interface Loyalty {
 
       @if (tab() === 'summary') {
         <section aria-labelledby="summary-title" class="section-stack">
+          @if (welcome()) {
+            <div class="welcome-banner" role="status">
+              <app-ui-icon name="sparkles" />
+              <div><strong>¡Bienvenido! Tu negocio ya está creado.</strong><p>Completa estos pasos para empezar a recibir turnos. Tienes 2 meses gratis.</p></div>
+              <button type="button" class="feedback-close" aria-label="Cerrar" (click)="welcome.set(false)">×</button>
+            </div>
+          }
+          @if (onboarding(); as o) {
+            @if (setupPct() < 100) {
+              <div class="card setup-card">
+                <div class="panel-head"><div><h3>Deja tu negocio listo para reservas</h3><p class="muted">{{ setupDone() }} de {{ setupSteps().length }} pasos completos</p></div><strong class="setup-pct">{{ setupPct() }}%</strong></div>
+                <div class="setup-bar" role="progressbar" [attr.aria-valuenow]="setupPct()" aria-valuemin="0" aria-valuemax="100" aria-label="Avance de la configuración"><span [style.width.%]="setupPct()"></span></div>
+                <ol class="setup-steps">
+                  @for (st of setupSteps(); track st.label) {
+                    <li [class.done]="st.done">
+                      <span class="setup-check"><app-ui-icon [name]="st.done ? 'check' : st.icon" /></span>
+                      <span class="setup-text"><strong>{{ st.label }}</strong><small>{{ st.hint }}</small></span>
+                      @if (!st.done) { <button type="button" class="btn btn-secondary btn-sm" (click)="selectTab(st.tab)">{{ st.cta }}</button> }
+                    </li>
+                  }
+                </ol>
+              </div>
+            }
+          }
           <div class="section-heading"><div><h2 id="summary-title">El negocio de un vistazo</h2><p>Información general de tu operación.</p></div></div>
           @if (summary(); as s) {
             <div class="metric-grid">
@@ -87,6 +105,8 @@ interface Loyalty {
               <button class="quick-link" (click)="selectTab('appointments')"><span class="metric-icon"><app-ui-icon name="calendar" /></span><span><strong>Ver citas</strong><small>Consulta las reservas del equipo</small></span><app-ui-icon name="chevron-right" /></button>
               <button class="quick-link" (click)="selectTab('services')"><span class="metric-icon"><app-ui-icon name="layers" /></span><span><strong>Servicios</strong><small>Organiza tu catálogo</small></span><app-ui-icon name="chevron-right" /></button>
               <button class="quick-link" (click)="selectTab('staff')"><span class="metric-icon"><app-ui-icon name="users" /></span><span><strong>Empleados</strong><small>Horarios y colaboradores</small></span><app-ui-icon name="chevron-right" /></button>
+              <button class="quick-link" (click)="selectTab('business')"><span class="metric-icon"><app-ui-icon name="store" /></span><span><strong>Mi negocio</strong><small>Logo, colores, contacto y ubicación</small></span><app-ui-icon name="chevron-right" /></button>
+              <button class="quick-link" (click)="selectTab('share')"><span class="metric-icon"><app-ui-icon name="qr" /></span><span><strong>Link y QR</strong><small>Comparte tu página de reservas</small></span><app-ui-icon name="chevron-right" /></button>
             </div>
           </div>
         </section>
@@ -245,18 +265,20 @@ interface Loyalty {
         </section>
       }
 
-      @if (tab() === 'branding' && branding(); as b) {
-        <section class="section-stack" aria-labelledby="branding-title"><div class="section-heading"><div><h2 id="branding-title">Personaliza tu sitio</h2><p>Haz que tu página de reservas refleje la identidad de tu marca.</p></div></div>
-          <div class="card form-stack form-panel"><h3>Identidad visual</h3>
-            <div class="color-fields"><div class="field"><label for="branding-primary">Color principal</label><input id="branding-primary" class="input" type="color" [(ngModel)]="b.primaryColor" /></div><div class="field"><label for="branding-secondary">Color secundario</label><input id="branding-secondary" class="input" type="color" [(ngModel)]="b.secondaryColor" /></div></div>
-            <div class="field"><label for="branding-logo">URL del logo</label><input id="branding-logo" class="input" type="url" [ngModel]="b.logoUrl" (ngModelChange)="b.logoUrl = $event" placeholder="https://ejemplo.com/logo.png" /></div>
-            <div class="field"><label for="branding-whatsapp">Número de WhatsApp</label><input id="branding-whatsapp" class="input" type="tel" [ngModel]="b.whatsappNumber" (ngModelChange)="b.whatsappNumber = $event" /></div>
-            <div class="field"><label for="branding-address">Dirección</label><input id="branding-address" class="input" [ngModel]="b.address" (ngModelChange)="b.address = $event" /></div>
-            <div class="field"><label for="branding-about">Descripción del negocio</label><textarea id="branding-about" class="input" [ngModel]="b.about" (ngModelChange)="b.about = $event"></textarea></div>
-            <div class="form-actions"><button class="btn btn-primary" (click)="saveBranding()">Guardar cambios</button>@if (saved()) { <span class="badge badge-ok" role="status"><app-ui-icon name="check" /> Guardado</span> }</div>
-          </div>
+      @if (tab() === 'business') {
+        <section class="section-stack" aria-labelledby="business-title">
+          <div class="section-heading"><div><h2 id="business-title">Mi negocio</h2><p>Autogestiona cómo te ven tus clientes: logo, colores, datos, contacto y ubicación.</p></div></div>
+          <app-business-profile (saved)="onProfileSaved($event)" />
         </section>
       }
+
+      @if (tab() === 'share') {
+        <section class="section-stack" aria-labelledby="share-title">
+          <div class="section-heading"><div><h2 id="share-title">Link y código QR</h2><p>Comparte tu página para que tus clientes pidan turno en segundos.</p></div></div>
+          <app-share-link (editLink)="selectTab('business')" (notify)="notify($event.message, $event.type)" />
+        </section>
+      }
+
       @if (feedback(); as f) {
         <div class="feedback-toast" [class.feedback-error]="f.type === 'error'" [class.feedback-success]="f.type === 'ok'" [attr.role]="f.type === 'error' ? 'alert' : 'status'">
           <app-ui-icon [name]="f.type === 'error' ? 'alert' : 'check-circle'" />
@@ -275,11 +297,13 @@ export class OwnerPanelPage implements OnInit {
   tabs = [
     { id: 'summary', label: 'Resumen', icon: 'chart' },
     { id: 'appointments', label: 'Citas', icon: 'calendar' },
+    { id: 'business', label: 'Mi negocio', icon: 'store' },
+    { id: 'share', label: 'Link y QR', icon: 'qr' },
     { id: 'services', label: 'Servicios', icon: 'layers' },
     { id: 'staff', label: 'Empleados', icon: 'users' },
     { id: 'loyalty', label: 'Fidelización', icon: 'gift' },
     { id: 'subscription', label: 'Suscripción', icon: 'credit-card' },
-    { id: 'branding', label: 'Personalizar', icon: 'palette' },
+
     { id: 'settings', label: 'Ajustes', icon: 'settings' },
   ];
   tab = signal('summary');
@@ -289,7 +313,10 @@ export class OwnerPanelPage implements OnInit {
   summary = signal<Summary | null>(null);
   services = signal<Service[]>([]);
   staff = signal<StaffRow[]>([]);
-  branding = signal<Branding | null>(null);
+  onboarding = signal<Onboarding | null>(null);
+  mySlug = signal('');
+  welcome = signal(false);
+  private route = inject(ActivatedRoute);
   settings = signal<Settings | null>(null);
   loyalty = signal<Loyalty | null>(null);
   appts = signal<Appointment[]>([]);
@@ -303,7 +330,6 @@ export class OwnerPanelPage implements OnInit {
   autoDone = signal(false);
   autoPlanId = '';
   autoEmail = '';
-  saved = signal(false);
   settingsSaved = signal(false);
   loyaltySaved = signal(false);
   staffSaved = signal(false);
@@ -328,7 +354,12 @@ export class OwnerPanelPage implements OnInit {
     this.api.get<Summary>('/tenant/summary').subscribe({ next: (s) => this.summary.set(s), error: () => this.summaryFailed.set(true) });
     this.api.get<Service[]>('/services').subscribe({ next: (s) => this.services.set(s) });
     this.api.get<StaffRow[]>('/staff').subscribe({ next: (s) => this.staff.set(s) });
-    this.api.get<Branding>('/tenant/branding').subscribe({ next: (b) => this.branding.set(b) });
+    this.loadOnboarding();
+    this.api.get<{ slug: string }>('/tenant/profile').subscribe({ next: (p) => this.mySlug.set(p.slug) });
+    const qp = this.route.snapshot.queryParamMap;
+    this.welcome.set(qp.has('bienvenida'));
+    const t = qp.get('tab');
+    if (t && this.tabs.some((x) => x.id === t)) this.selectTab(t === 'business' && this.welcome() ? 'summary' : t);
     this.api.get<Settings>('/tenant/settings').subscribe({ next: (s) => this.settings.set(s) });
     this.api.get<Loyalty>('/loyalty/settings').subscribe({ next: (l) => this.loyalty.set(l) });
   }
@@ -336,6 +367,7 @@ export class OwnerPanelPage implements OnInit {
   selectTab(id: string): void {
     this.tab.set(id);
     this.feedback.set(null);
+    if (id === 'summary') this.loadOnboarding();
     if (id === 'appointments') this.loadAppts();
     if (id === 'subscription') this.loadBilling();
   }
@@ -506,16 +538,32 @@ export class OwnerPanelPage implements OnInit {
       });
   }
 
-  saveBranding(): void {
-    const b = this.branding();
-    if (!b) return;
-    this.api.put('/tenant/branding', b).subscribe({
-      next: () => { this.saved.set(true); setTimeout(() => this.saved.set(false), 2000); },
-      error: () => this.notify('No se pudo guardar la personalización.'),
-    });
+  loadOnboarding(): void {
+    this.api.get<Onboarding>('/tenant/onboarding').subscribe({ next: (o) => this.onboarding.set(o) });
   }
 
-  private notify(message: string, type: 'error' | 'ok' = 'error'): void { this.feedback.set({ message, type }); }
+  setupSteps = computed(() => {
+    const o = this.onboarding();
+    if (!o) return [];
+    return [
+      { label: 'Sube tu logo y elige tus colores', hint: 'Tu marca en tu página y en el directorio', done: o.hasLogo, tab: 'business', cta: 'Personalizar', icon: 'palette' },
+      { label: 'Elige el tipo de negocio', hint: 'Para que te encuentren por categoría', done: o.hasCategory, tab: 'business', cta: 'Elegir', icon: 'layers' },
+      { label: 'Agrega tu ubicación', hint: 'Aparece en "cerca de mí"', done: o.hasLocation, tab: 'business', cta: 'Ubicar', icon: 'map-pin' },
+      { label: 'Datos de contacto', hint: 'WhatsApp o teléfono', done: o.hasContact, tab: 'business', cta: 'Agregar', icon: 'phone' },
+      { label: 'Crea tus servicios', hint: 'Lo que tus clientes pueden reservar', done: o.services > 0, tab: 'services', cta: 'Crear', icon: 'layers' },
+      { label: 'Agrega quién atiende y su horario', hint: 'Empleado con servicios y horario asignados', done: o.bookableStaff > 0, tab: 'staff', cta: 'Configurar', icon: 'users' },
+    ];
+  });
+  setupDone = computed(() => this.setupSteps().filter((x) => x.done).length);
+  setupPct = computed(() => (this.setupSteps().length ? Math.round((this.setupDone() / this.setupSteps().length) * 100) : 0));
 
-  logout(): void { this.auth.logout(); this.router.navigate(['/login']); }
+  onProfileSaved(e: { message: string; type: 'ok' | 'error'; slug?: string }): void {
+    this.notify(e.message, e.type);
+    if (e.slug) this.mySlug.set(e.slug);
+    if (e.type === 'ok') this.loadOnboarding();
+  }
+
+  notify(message: string, type: 'error' | 'ok' = 'error'): void { this.feedback.set({ message, type }); }
+
+  logout(): void { this.auth.logout(); this.router.navigate(['/']); }
 }

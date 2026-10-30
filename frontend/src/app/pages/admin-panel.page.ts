@@ -1,10 +1,12 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { UiIconComponent } from '../ui/icon.component';
+import { BrandLockupComponent } from '../ui/brand-lockup.component';
+import { PlatformBrandComponent } from '../admin/platform-brand.component';
 import type { Plan, TenantRow } from '../core/models';
 
 interface Metrics { tenants: number; active: number; appts: number; subscriptions: { status: string; n: number }[]; }
@@ -13,11 +15,11 @@ interface Metrics { tenants: number; active: number; appts: number; subscription
 @Component({
   selector: 'app-admin-panel',
   standalone: true,
-  imports: [FormsModule, DatePipe, DecimalPipe, UiIconComponent],
+  imports: [FormsModule, DatePipe, DecimalPipe, UiIconComponent, BrandLockupComponent, RouterLink, PlatformBrandComponent],
   template: `
     <a class="skip-link" href="#main-content">Saltar al contenido</a>
     <header class="topbar"><div class="container topbar-inner">
-      <div class="topbar-brand"><span class="brand-mark"><app-ui-icon name="calendar-check" /></span><div class="brand-stack"><span class="brand-wordmark">Turnos<span>Ya</span></span><span class="brand-small">Centro de administración</span></div></div>
+      <a routerLink="/" class="topbar-brand" aria-label="Ir al inicio"><app-brand-lockup subtitle="Centro de administración" /></a>
       <div class="topbar-actions"><span class="role-badge">Superadministrador</span><button class="btn btn-subtle btn-sm" (click)="logout()"><app-ui-icon name="logout" /> Salir</button></div>
     </div></header>
     <main id="main-content" class="container page-shell section-stack">
@@ -26,6 +28,7 @@ interface Metrics { tenants: number; active: number; appts: number; subscription
         <button class="tab" [class.active]="tab()==='metrics'" [attr.aria-pressed]="tab()==='metrics'" (click)="tab.set('metrics')"><app-ui-icon name="chart" /> Métricas</button>
         <button class="tab" [class.active]="tab()==='tenants'" [attr.aria-pressed]="tab()==='tenants'" (click)="tab.set('tenants')"><app-ui-icon name="store" /> Negocios</button>
         <button class="tab" [class.active]="tab()==='plans'" [attr.aria-pressed]="tab()==='plans'" (click)="tab.set('plans')"><app-ui-icon name="credit-card" /> Planes</button>
+        <button class="tab" [class.active]="tab()==='brand'" [attr.aria-pressed]="tab()==='brand'" (click)="tab.set('brand')"><app-ui-icon name="palette" /> Marca</button>
       </nav>
       @if (tab()==='metrics') {
         <section class="section-stack" aria-labelledby="admin-metrics-title"><div class="section-heading"><div><h2 id="admin-metrics-title">Indicadores de la plataforma</h2><p>Resumen de operación y suscripciones.</p></div></div>
@@ -49,7 +52,7 @@ interface Metrics { tenants: number; active: number; appts: number; subscription
           <div class="record-list">
             @for (t of tenants(); track t.id) {
               <div class="card record-card">
-                <div class="record-main"><strong class="record-title">{{ t.name }}</strong><span class="record-meta">/sitio/{{ t.slug }}</span><div class="data-pair"><span class="badge" [class]="t.status==='active' ? 'badge-ok':'badge-danger'">{{ t.status==='active' ? 'Activo' : 'Suspendido' }}</span>@if (t.subStatus) { <span class="badge badge-neutral">{{ t.subStatus }}</span> }@if (t.planName) { <span class="record-meta">{{ t.planName }}</span> }@if (t.currentPeriodEnd) { <span class="record-meta">Vence {{ t.currentPeriodEnd | date:'d MMM y' }}</span> }</div></div>
+                <div class="record-main"><strong class="record-title">{{ t.name }}</strong><a class="record-meta" [href]="'/' + t.slug" target="_blank" rel="noopener noreferrer">/{{ t.slug }} <app-ui-icon name="external" /></a>@if (t.categoryName || t.city) { <span class="record-meta">{{ t.categoryName || 'Sin categoría' }}@if (t.city) { · {{ t.city }} }</span> }@if (t.isListed === false) { <span class="badge badge-warn">Oculto en directorio</span> }<div class="data-pair"><span class="badge" [class]="t.status==='active' ? 'badge-ok':'badge-danger'">{{ t.status==='active' ? 'Activo' : 'Suspendido' }}</span>@if (t.subStatus) { <span class="badge badge-neutral">{{ t.subStatus }}</span> }@if (t.planName) { <span class="record-meta">{{ t.planName }}</span> }@if (t.currentPeriodEnd) { <span class="record-meta">Vence {{ t.currentPeriodEnd | date:'d MMM y' }}</span> }</div></div>
                 <div class="record-action"><button class="btn btn-sm" [class.btn-outline-danger]="t.status==='active'" [class.btn-secondary]="t.status!=='active'" (click)="toggle(t)">{{ t.status==='active' ? 'Suspender' : 'Activar' }}</button></div>
               </div>
             }
@@ -75,6 +78,11 @@ interface Metrics { tenants: number; active: number; appts: number; subscription
               </div>
             </div>
           </div>
+        </section>
+      }
+      @if (tab()==='brand') {
+        <section class="section-stack" aria-labelledby="brand-title"><div class="section-heading"><div><h2 id="brand-title">Marca de la plataforma</h2><p>Logo, nombre y colores que ven todos los usuarios.</p></div></div>
+          <app-platform-brand (notify)="notify($event.message, $event.type)" />
         </section>
       }
       @if (feedback(); as f) {
@@ -126,7 +134,7 @@ export class AdminPanelPage implements OnInit {
     });
   }
 
-  private notify(message: string, type: 'error' | 'ok' = 'error'): void { this.feedback.set({ message, type }); }
+  notify(message: string, type: 'error' | 'ok' = 'error'): void { this.feedback.set({ message, type }); }
 
-  logout(): void { this.auth.logout(); this.router.navigate(['/login']); }
+  logout(): void { this.auth.logout(); this.router.navigate(['/']); }
 }

@@ -1,18 +1,16 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { UiIconComponent } from './icon.component';
+import { BrandLockupComponent } from './brand-lockup.component';
 
 /** A product illustration, not real appointment data. Shared by sign-in and registrations. */
 @Component({
   selector: 'app-auth-showcase',
   standalone: true,
-  imports: [UiIconComponent],
+  imports: [UiIconComponent, BrandLockupComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <aside class="auth-showcase" aria-label="Presentación de TurnosYa">
-      <div class="showcase-top">
-        <span class="brand-mark brand-mark-light"><app-ui-icon name="calendar-check" /></span>
-        <span class="brand-wordmark brand-wordmark-light">Turnos<span>Ya</span></span>
-      </div>
+    <aside class="auth-showcase" aria-label="Presentación de la plataforma">
+      <div class="showcase-top"><a href="/" class="showcase-home" aria-label="Ir al inicio"><app-brand-lockup [light]="true" /></a></div>
       <div class="showcase-body">
         <span class="showcase-eyebrow"><span class="showcase-dot"></span> Tu agenda, a otro nivel</span>
         <h2>Más tiempo para lo que realmente importa.</h2>

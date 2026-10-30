@@ -27,3 +27,17 @@ describe('ThemeService / tenant customization', () => {
     }
   });
 });
+
+describe('ThemeService / platform palette', () => {
+  it('restores the platform palette (not the CSS default) after leaving a business page', () => {
+    const theme = new ThemeService();
+    theme.setPlatform('#0f766e', '#115e59');
+    theme.apply('#ffdd33', '#ff8800');
+    expect(document.documentElement.style.getPropertyValue('--brand-primary')).toBe('#ffdd33');
+    theme.reset();
+    expect(document.documentElement.style.getPropertyValue('--brand-primary')).toBe('#0f766e');
+    expect(document.documentElement.style.getPropertyValue('--brand-secondary')).toBe('#115e59');
+    theme.setPlatform(null);
+    expect(document.documentElement.style.getPropertyValue('--brand-primary')).toBe('');
+  });
+});
