@@ -48,9 +48,13 @@ export interface PublicSite {
     about?: string | null;
     instagram?: string | null;
     website?: string | null;
+    facebook?: string | null;
+    tiktok?: string | null;
+    openingHours?: string | null;
   } | null;
   services: Service[];
-  staff?: { id: string; fullName: string; title?: string | null }[];
+  staff?: { id: string; fullName: string; title?: string | null; photoUrl?: string | null }[];
+  onlinePayment?: { enabled: boolean; chargeMode?: 'full' | 'deposit'; depositPct?: number };
 }
 
 /** Categoría (tipo de negocio) del directorio. */
@@ -111,6 +115,9 @@ export interface Appointment {
   customerPhone?: string;
   businessName?: string;
   businessSlug?: string;
+  paymentStatus?: 'none' | 'pending' | 'paid';
+  priceCop?: number;
+  canPay?: boolean;
 }
 
 export interface LoyaltyCard {
@@ -127,6 +134,10 @@ export interface LoyaltyCard {
 export interface Plan {
   id: string;
   name: string;
+  description?: string | null;
+  discountQuarterlyPct?: number;
+  discountSemiannualPct?: number;
+  subscribers?: number;
   priceCop: number;
   maxStaff: number;
   maxBranches: number;
@@ -149,3 +160,34 @@ export interface TenantRow {
   city?: string | null;
   isListed?: boolean;
 }
+
+/** Datos de contacto del sitio principal (superadmin). */
+export interface PlatformContact {
+  email?: string | null; phone?: string | null; whatsapp?: string | null;
+  address?: string | null; city?: string | null; supportHours?: string | null;
+  instagram?: string | null; facebook?: string | null; tiktok?: string | null; website?: string | null;
+}
+
+export type BillingCycle = 1 | 3 | 6;
+
+export interface FeatureDef { key: string; label: string; }
+
+export interface DiscountLine { kind: string; label: string; pct: number; amountCop: number; }
+
+export interface PriceQuote {
+  months: BillingCycle; monthlyPriceCop: number; baseCop: number;
+  discounts: DiscountLine[]; discountCop: number; totalCop: number; effectiveMonthlyCop: number;
+  planId?: string; planName?: string; cycleLabel?: string;
+}
+
+/** Respuesta de checkout firmada para abrir Wompi Web Checkout. */
+export interface WompiCheckout {
+  publicKey: string; currency: string; amountInCents: number; reference: string;
+  signatureIntegrity: string | null; redirectUrl: string; customerEmail?: string | null;
+}
+
+export const CYCLE_OPTIONS: { months: BillingCycle; label: string }[] = [
+  { months: 1, label: 'Mensual' },
+  { months: 3, label: 'Trimestral' },
+  { months: 6, label: 'Semestral' },
+];

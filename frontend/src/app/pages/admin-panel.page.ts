@@ -1,5 +1,5 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { DatePipe, DecimalPipe } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/api.service';
@@ -7,7 +7,12 @@ import { AuthService } from '../core/auth.service';
 import { UiIconComponent } from '../ui/icon.component';
 import { BrandLockupComponent } from '../ui/brand-lockup.component';
 import { PlatformBrandComponent } from '../admin/platform-brand.component';
-import type { Plan, TenantRow } from '../core/models';
+import { AdminBillingComponent } from '../admin/admin-billing.component';
+import { AdminPlansComponent } from '../admin/admin-plans.component';
+import { AdminReferralsComponent } from '../admin/admin-referrals.component';
+import { AdminContactComponent } from '../admin/admin-contact.component';
+import { AdminWompiComponent } from '../admin/admin-wompi.component';
+import type { TenantRow } from '../core/models';
 
 interface Metrics { tenants: number; active: number; appts: number; subscriptions: { status: string; n: number }[]; }
 
@@ -15,7 +20,8 @@ interface Metrics { tenants: number; active: number; appts: number; subscription
 @Component({
   selector: 'app-admin-panel',
   standalone: true,
-  imports: [FormsModule, DatePipe, DecimalPipe, UiIconComponent, BrandLockupComponent, RouterLink, PlatformBrandComponent],
+  imports: [FormsModule, DatePipe, UiIconComponent, BrandLockupComponent, RouterLink, PlatformBrandComponent,
+    AdminBillingComponent, AdminPlansComponent, AdminReferralsComponent, AdminContactComponent, AdminWompiComponent],
   template: `
     <a class="skip-link" href="#main-content">Saltar al contenido</a>
     <header class="topbar"><div class="container topbar-inner">
@@ -25,10 +31,9 @@ interface Metrics { tenants: number; active: number; appts: number; subscription
     <main id="main-content" class="container page-shell section-stack">
       <div class="page-hero"><div><span class="eyebrow">Vista global</span><h1>Administración general.</h1><p>Visibilidad y control de los negocios, suscripciones y planes de la plataforma.</p></div></div>
       <nav class="tabs" aria-label="Secciones de administración">
-        <button class="tab" [class.active]="tab()==='metrics'" [attr.aria-pressed]="tab()==='metrics'" (click)="tab.set('metrics')"><app-ui-icon name="chart" /> Métricas</button>
-        <button class="tab" [class.active]="tab()==='tenants'" [attr.aria-pressed]="tab()==='tenants'" (click)="tab.set('tenants')"><app-ui-icon name="store" /> Negocios</button>
-        <button class="tab" [class.active]="tab()==='plans'" [attr.aria-pressed]="tab()==='plans'" (click)="tab.set('plans')"><app-ui-icon name="credit-card" /> Planes</button>
-        <button class="tab" [class.active]="tab()==='brand'" [attr.aria-pressed]="tab()==='brand'" (click)="tab.set('brand')"><app-ui-icon name="palette" /> Marca</button>
+        @for (t of tabs; track t.id) {
+          <button class="tab" [class.active]="tab()===t.id" [attr.aria-pressed]="tab()===t.id" (click)="selectTab(t.id)"><app-ui-icon [name]="t.icon" /> {{ t.label }}</button>
+        }
       </nav>
       @if (tab()==='metrics') {
         <section class="section-stack" aria-labelledby="admin-metrics-title"><div class="section-heading"><div><h2 id="admin-metrics-title">Indicadores de la plataforma</h2><p>Resumen de operación y suscripciones.</p></div></div>
@@ -60,24 +65,29 @@ interface Metrics { tenants: number; active: number; appts: number; subscription
           </div>
         </section>
       }
+      @if (tab()==='billing') {
+        <section class="section-stack" aria-labelledby="billing-title"><div class="section-heading"><div><h2 id="billing-title">Suscripciones y pagos</h2><p>Recaudo, renovaciones, pagos y ajustes de cada negocio.</p></div></div>
+          <app-admin-billing (notify)="notify($event.message, $event.type)" />
+        </section>
+      }
       @if (tab()==='plans') {
-        <section class="section-stack" aria-labelledby="plans-title"><div class="section-heading"><div><h2 id="plans-title">Planes comerciales</h2><p>Administra los planes que ofreces a los negocios.</p></div></div>
-          <div class="management-grid">
-            <div class="card form-stack"><h3>Crear un plan</h3>
-              <div class="field"><label for="plan-name">Nombre del plan</label><input id="plan-name" class="input" [(ngModel)]="pName" placeholder="Ej. Profesional" /></div>
-              <div class="field"><label for="plan-price">Precio mensual (COP)</label><input id="plan-price" class="input" type="number" min="0" [(ngModel)]="pPrice" /></div>
-              <div class="form-columns"><div class="field"><label for="plan-staff">Máx. empleados</label><input id="plan-staff" class="input" type="number" min="1" [(ngModel)]="pStaff" /></div><div class="field"><label for="plan-services">Máx. servicios</label><input id="plan-services" class="input" type="number" min="1" [(ngModel)]="pServices" /></div></div>
-              <button class="btn btn-primary" (click)="addPlan()"><app-ui-icon name="plus" /> Crear plan</button>
-            </div>
-            <div class="section-stack"><h3 class="card-title">Planes registrados <span class="badge badge-neutral">{{ plans().length }}</span></h3>
-              <div class="record-list">
-                @for (p of plans(); track p.id) {
-                  <div class="card record-card"><div class="record-main"><strong class="record-title">{{ p.name }}</strong><span class="record-meta">{{ p.maxStaff }} empleados · {{ p.maxServices }} servicios</span></div><strong class="record-title">{{ p.priceCop | number }} COP<small class="muted">/mes</small></strong></div>
-                }
-                @if (plans().length === 0) { <div class="empty-state"><span class="empty-icon"><app-ui-icon name="credit-card" /></span><h3>Sin planes creados</h3><p>Crea tu primer plan para comenzar.</p></div> }
-              </div>
-            </div>
-          </div>
+        <section class="section-stack" aria-labelledby="plans-title"><div class="section-heading"><div><h2 id="plans-title">Planes comerciales</h2><p>Precio, límites, funcionalidades y descuentos trimestral y semestral.</p></div></div>
+          <app-admin-plans (notify)="notify($event.message, $event.type)" />
+        </section>
+      }
+      @if (tab()==='referrals') {
+        <section class="section-stack" aria-labelledby="ref-section-title"><div class="section-heading"><div><h2 id="ref-section-title">Referidos</h2><p>Descuentos por códigos de negocios suscritos activos.</p></div></div>
+          <app-admin-referrals (notify)="notify($event.message, $event.type)" />
+        </section>
+      }
+      @if (tab()==='contact') {
+        <section class="section-stack" aria-labelledby="contact-title"><div class="section-heading"><div><h2 id="contact-title">Contacto</h2><p>Datos de contacto del sitio principal.</p></div></div>
+          <app-admin-contact (notify)="notify($event.message, $event.type)" />
+        </section>
+      }
+      @if (tab()==='wompi') {
+        <section class="section-stack" aria-labelledby="wompi-title"><div class="section-heading"><div><h2 id="wompi-title">Pasarela de pagos</h2><p>Configuración de Wompi para cobrar las suscripciones.</p></div></div>
+          <app-admin-wompi (notify)="notify($event.message, $event.type)" />
         </section>
       }
       @if (tab()==='brand') {
@@ -100,37 +110,34 @@ export class AdminPanelPage implements OnInit {
   private auth = inject(AuthService);
   private router = inject(Router);
 
+  tabs = [
+    { id: 'metrics', label: 'Métricas', icon: 'chart' },
+    { id: 'billing', label: 'Suscripciones y pagos', icon: 'wallet' },
+    { id: 'tenants', label: 'Negocios', icon: 'store' },
+    { id: 'plans', label: 'Planes', icon: 'credit-card' },
+    { id: 'referrals', label: 'Referidos', icon: 'gift' },
+    { id: 'contact', label: 'Contacto', icon: 'phone' },
+    { id: 'wompi', label: 'Pasarela', icon: 'shield' },
+    { id: 'brand', label: 'Marca', icon: 'palette' },
+  ];
   tab = signal('metrics');
   feedback = signal<{ type: 'error' | 'ok'; message: string } | null>(null);
   metricsFailed = signal(false);
   metrics = signal<Metrics | null>(null);
   tenants = signal<TenantRow[]>([]);
-  plans = signal<Plan[]>([]);
-
-  pName = ''; pPrice = 49000; pStaff = 3; pServices = 20;
 
   ngOnInit(): void {
     this.api.get<Metrics>('/admin/metrics').subscribe({ next: (m) => this.metrics.set(m), error: () => this.metricsFailed.set(true) });
     this.api.get<TenantRow[]>('/admin/tenants').subscribe({ next: (t) => this.tenants.set(t) });
-    this.api.get<Plan[]>('/admin/plans').subscribe({ next: (p) => this.plans.set(p) });
   }
+
+  selectTab(id: string): void { this.tab.set(id); this.feedback.set(null); }
 
   toggle(t: TenantRow): void {
     const status = t.status === 'active' ? 'suspended' : 'active';
     this.api.post(`/admin/tenants/${t.id}/status`, { status }).subscribe({
       next: () => { this.notify('Estado del negocio actualizado.', 'ok'); this.api.get<TenantRow[]>('/admin/tenants').subscribe({ next: (r) => this.tenants.set(r) }); },
       error: () => this.notify('No se pudo actualizar el negocio.'),
-    });
-  }
-
-  addPlan(): void {
-    if (!this.pName.trim()) { this.notify('Ingresa el nombre del plan.'); return; }
-    this.api.post('/admin/plans', {
-      name: this.pName, priceCop: this.pPrice, maxStaff: this.pStaff,
-      maxBranches: 1, maxServices: this.pServices, features: {}, isActive: true, sortOrder: 0,
-    }).subscribe({
-      next: () => { this.pName = ''; this.notify('Plan creado correctamente.', 'ok'); this.api.get<Plan[]>('/admin/plans').subscribe({ next: (p) => this.plans.set(p) }); },
-      error: () => this.notify('No se pudo crear el plan.'),
     });
   }
 

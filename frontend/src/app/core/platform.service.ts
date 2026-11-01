@@ -3,7 +3,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from './api.service';
 import { ThemeService } from './theme.service';
-import type { PlatformBranding } from './models';
+import type { PlatformBranding, PlatformContact } from './models';
 
 const DEFAULT_BRANDING: PlatformBranding = {
   brandName: 'TurnosYa',
@@ -20,6 +20,9 @@ export class PlatformService {
   private theme = inject(ThemeService);
 
   readonly branding = signal<PlatformBranding>(this.cached() ?? DEFAULT_BRANDING);
+  /** Contacto del sitio principal (superadmin). Se carga bajo demanda. */
+  readonly contact = signal<PlatformContact | null>(null);
+  private contactLoaded = false;
 
   constructor() {
     this.applyToDocument(this.branding());
@@ -33,6 +36,16 @@ export class PlatformService {
     } catch {
       /* se mantiene la marca por defecto o la última conocida */
     }
+  }
+
+  /** Carga el contacto del sitio principal una vez (o de nuevo si force). Nunca falla. */
+  loadContact(force = false): void {
+    if (this.contactLoaded && !force) return;
+    this.contactLoaded = true;
+    this.api.get<PlatformContact>('/platform/contact').subscribe({
+      next: (c) => this.contact.set(c),
+      error: () => this.contact.set(null),
+    });
   }
 
   /** Aplica una marca nueva (por ejemplo, al guardar desde el panel del superadmin). */

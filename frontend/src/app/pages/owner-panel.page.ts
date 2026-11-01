@@ -8,31 +8,13 @@ import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { UiIconComponent } from '../ui/icon.component';
 import { BrandLockupComponent } from '../ui/brand-lockup.component';
-import type { Appointment, Plan, Service } from '../core/models';
-
-interface Payment {
-  reference: string; amountInCents: number; currency: string;
-  status: string; periodMonths: number; createdAt: string;
-}
-interface CheckoutResponse {
-  publicKey: string; currency: string; amountInCents: number;
-  reference: string; signatureIntegrity: string | null; redirectUrl: string;
-}
-interface SubState {
-  status: string; trialEndsAt: string | null; currentPeriodEnd: string | null;
-  autoRenew: boolean; payerEmail: string | null; hasCard: boolean;
-}
-interface AcceptanceResponse { publicKey: string; acceptanceToken: string; personalAuthToken: string; }
-
-// Tipado mínimo del widget global de Wompi.
-declare global {
-  interface Window {
-    WidgetCheckout?: new (opts: Record<string, unknown>) => { open: (cb: (result: { transaction?: unknown; token?: string }) => void) => void };
-  }
-}
+import { OwnerSubscriptionComponent } from '../owner/owner-subscription.component';
+import { OwnerPaymentsComponent } from '../owner/owner-payments.component';
+import { ImageUploadComponent } from '../ui/image-upload.component';
+import type { Appointment, Service } from '../core/models';
 
 interface Onboarding { hasLogo: boolean; hasCategory: boolean; hasLocation: boolean; hasContact: boolean; services: number; bookableStaff: number; isListed: boolean; }
-interface StaffRow { id: string; fullName: string; email: string; title?: string; isActive: boolean; }
+interface StaffRow { id: string; fullName: string; email: string; title?: string | null; isActive: boolean; photoUrl?: string | null; }
 interface Summary { today: number; upcoming: number; staff: number; services: number; }
 interface Settings {
   minLeadMinutes: number; cancelLeadMinutes: number; slotMinutes: number;
@@ -47,7 +29,7 @@ interface Loyalty {
 @Component({
   selector: 'app-owner-panel',
   standalone: true,
-  imports: [FormsModule, DecimalPipe, DatePipe, UiIconComponent, BrandLockupComponent, RouterLink, BusinessProfileComponent, ShareLinkComponent],
+  imports: [FormsModule, DecimalPipe, DatePipe, UiIconComponent, BrandLockupComponent, RouterLink, BusinessProfileComponent, ShareLinkComponent, OwnerSubscriptionComponent, OwnerPaymentsComponent, ImageUploadComponent],
   template: `
     <a class="skip-link" href="#main-content">Saltar al contenido</a>
     <header class="topbar">
@@ -150,12 +132,23 @@ interface Loyalty {
             @for (st of staff(); track st.id) {
               <div class="card stack" style="gap:1.2rem">
                 <div class="record-card" style="padding:0;border:0;box-shadow:none">
-                  <div class="record-main"><strong class="record-title">{{ st.fullName }}</strong><span class="record-meta">{{ st.email }}</span></div>
-                  <button class="btn btn-secondary btn-sm" [attr.aria-expanded]="editStaff() === st.id" (click)="toggleStaffEdit(st.id)">{{ editStaff() === st.id ? 'Cerrar edición' : 'Horario y servicios' }} <app-ui-icon name="chevron-right" /></button>
+                  <div class="staff-head"><span class="avatar">@if (st.photoUrl) { <img [src]="st.photoUrl" alt="" /> } @else { <app-ui-icon name="user" /> }</span>
+                    <div class="record-main"><strong class="record-title">{{ st.fullName }}@if (!st.isActive) { <span class="badge badge-neutral">Inactivo</span> }</strong><span class="record-meta">{{ st.title ? st.title + ' · ' : '' }}{{ st.email }}</span></div></div>
+                  <button class="btn btn-secondary btn-sm" [attr.aria-expanded]="editStaff() === st.id" (click)="toggleStaffEdit(st.id)">{{ editStaff() === st.id ? 'Cerrar edición' : 'Editar' }} <app-ui-icon name="chevron-right" /></button>
                 </div>
                 @if (editStaff() === st.id) {
                   <div class="card-divider"></div>
                   <div class="form-stack">
+                    <div class="field"><span class="field-label">Perfil</span><p class="muted">La foto y el cargo se muestran a tus clientes al elegir quién los atiende.</p></div>
+                    <app-image-upload kind="staff_photo" label="Foto del empleado" hint="Foto de rostro, cuadrada. PNG, JPG o WebP."
+                                      [value]="stEdit.photoUrl" (valueChange)="stEdit.photoUrl = $event" />
+                    <div class="form-columns">
+                      <div class="field"><label [for]="'st-name-' + st.id">Nombre</label><input class="input" [id]="'st-name-' + st.id" [(ngModel)]="stEdit.fullName" maxlength="100" /></div>
+                      <div class="field"><label [for]="'st-title-' + st.id">Cargo o especialidad</label><input class="input" [id]="'st-title-' + st.id" [(ngModel)]="stEdit.title" maxlength="100" placeholder="Ej. Barbero senior" /></div>
+                    </div>
+                    <label class="check-row"><input type="checkbox" [checked]="stEdit.isActive" (change)="stEdit.isActive = !stEdit.isActive" /> Activo (recibe reservas)</label>
+                    <div class="form-actions"><button class="btn btn-secondary btn-sm" (click)="saveStaffProfile(st.id)">Guardar perfil</button></div>
+                    <div class="card-divider"></div>
                     <div class="field"><span class="field-label">Servicios que presta</span>
                       <div class="check-group">
                         @for (sv of services(); track sv.id) {
@@ -215,40 +208,15 @@ interface Loyalty {
 
       @if (tab() === 'subscription') {
         <section class="section-stack" aria-labelledby="sub-title">
-          <div class="section-heading"><div><h2 id="sub-title">Suscripción y pagos</h2><p>Controla tu plan y el historial de tus pagos.</p></div></div>
-          @if (sub(); as sv) {
-            <div class="card form-stack" style="max-width:620px">
-              <div class="panel-head"><h3>Estado de tu suscripción</h3><span class="badge" [class]="sv.status==='active' || sv.status==='trial' ? 'badge-ok':'badge-danger'">{{ subLabel(sv.status) }}</span></div>
-              @if (sv.currentPeriodEnd) { <div class="info-row"><span class="info-label">Fecha de vencimiento</span><strong>{{ sv.currentPeriodEnd | date:'d MMM y' }}</strong></div> }
-              <div class="info-row"><span class="info-label">Cobro automático mensual</span><span class="badge" [class]="sv.autoRenew ? 'badge-ok':'badge-warn'">{{ sv.autoRenew ? 'Activo' : 'Inactivo' }}</span></div>
-              @if (sv.autoRenew) {
-                <p class="muted">Tu plan se renovará automáticamente con la tarjeta guardada{{ sv.payerEmail ? ' (' + sv.payerEmail + ')' : '' }}.</p>
-                <div><button class="btn btn-outline-danger" (click)="cancelAutoRenew()">Desactivar cobro automático</button></div>
-              } @else {
-                <p class="muted">Activa el cobro automático con Wompi para mantener tu suscripción al día.</p>
-                <div class="field"><label for="auto-plan">Plan a cobrar</label><select id="auto-plan" class="input" [(ngModel)]="autoPlanId"><option value="">— Elige un plan —</option>@for (p of plans(); track p.id) { <option [value]="p.id">{{ p.name }} · {{ p.priceCop | number }} COP/mes</option> }</select></div>
-                <div class="field"><label for="auto-email">Correo para los recibos</label><input id="auto-email" class="input" type="email" [(ngModel)]="autoEmail" autocomplete="email" /></div>
-                <div class="form-actions"><button class="btn btn-primary" [disabled]="autoBusy()" [attr.aria-busy]="autoBusy()" (click)="startAutoRenew()">@if (autoBusy()) { <span class="spinner"></span> Abriendo Wompi… } @else { Guardar tarjeta y activar }</button></div>
-                @if (autoError()) { <p class="error" role="alert">{{ autoError() }}</p> }
-                @if (autoDone()) { <p class="success-message" role="status">Cobro automático activado.</p> }
-              }
-            </div>
-          }
-          <div class="section-heading secondary-section"><div><h2>Pago único</h2><p>Tus primeros 2 meses son gratis. Luego elige el plan que mejor se adapte a ti.</p></div></div>
-          <div class="grid">
-            @for (p of plans(); track p.id) {
-              <div class="card plan-card"><h3>{{ p.name }}</h3><div class="plan-price">{{ p.priceCop | number }} <small>COP/mes</small></div><p class="muted">{{ p.maxStaff }} empleados · {{ p.maxServices }} servicios</p><button class="btn btn-primary" [disabled]="paying()" [attr.aria-busy]="paying()" (click)="pay(p.id)">@if (paying()) { <span class="spinner"></span> Redirigiendo… } @else { Pagar con Wompi <app-ui-icon name="arrow-right" /> }</button></div>
-            }
-            @if (plans().length === 0) { <div class="empty-state"><h3>Sin planes disponibles</h3><p>Vuelve a consultar más adelante.</p></div> }
-          </div>
-          @if (payError()) { <p class="error" role="alert">{{ payError() }}</p> }
-          <div class="section-heading secondary-section"><div><h2>Historial de pagos</h2><p>Consulta los últimos movimientos de tu cuenta.</p></div></div>
-          <div class="record-list">
-            @for (pay of payments(); track pay.reference) {
-              <div class="card record-card"><div class="record-main"><strong class="record-title">{{ pay.amountInCents / 100 | number }} COP</strong><span class="record-meta">{{ pay.createdAt | date:'d MMM y, HH:mm' }}</span></div><span class="badge" [class]="pay.status==='approved' ? 'badge-ok' : (pay.status==='pending' ? 'badge-warn':'badge-danger')">{{ pay.status }}</span></div>
-            }
-            @if (payments().length === 0) { <div class="empty-state"><span class="empty-icon"><app-ui-icon name="credit-card" /></span><h3>Aún no hay pagos</h3><p>Los pagos aparecerán aquí cuando los realices.</p></div> }
-          </div>
+          <div class="section-heading"><div><h2 id="sub-title">Suscripción y pagos</h2><p>Tu plan, ciclo de pago, descuentos, referidos e historial.</p></div></div>
+          <app-owner-subscription (notify)="notify($event.message, $event.type)" />
+        </section>
+      }
+
+      @if (tab() === 'payments') {
+        <section class="section-stack" aria-labelledby="payments-title">
+          <div class="section-heading"><div><h2 id="payments-title">Pagos en línea</h2><p>Conecta tu cuenta Wompi para que tus clientes paguen sus citas desde tu página.</p></div></div>
+          <app-owner-payments (notify)="notify($event.message, $event.type)" />
         </section>
       }
 
@@ -259,7 +227,8 @@ interface Loyalty {
             <div class="field"><label for="setting-cancel">Antelación mínima para cancelar (min)</label><input id="setting-cancel" class="input" type="number" min="0" [ngModel]="s.cancelLeadMinutes" (ngModelChange)="s.cancelLeadMinutes = $event" /></div>
             <div class="field"><label for="setting-slot">Duración del turno base (min)</label><input id="setting-slot" class="input" type="number" min="1" [ngModel]="s.slotMinutes" (ngModelChange)="s.slotMinutes = $event" /></div>
             <div class="card-divider"></div>
-            <div class="field"><span class="field-label">Opciones de reserva</span><div class="form-stack" style="gap:.85rem"><label class="check-row"><input type="checkbox" [checked]="s.allowWaitlist" (change)="s.allowWaitlist = !s.allowWaitlist" /> Lista de espera</label><label class="check-row"><input type="checkbox" [checked]="s.allowReviews" (change)="s.allowReviews = !s.allowReviews" /> Reseñas</label><label class="check-row"><input type="checkbox" [checked]="s.onlinePayment" (change)="s.onlinePayment = !s.onlinePayment" /> Pago en línea</label></div></div>
+            <div class="field"><span class="field-label">Opciones de reserva</span><div class="form-stack" style="gap:.85rem"><label class="check-row"><input type="checkbox" [checked]="s.allowWaitlist" (change)="s.allowWaitlist = !s.allowWaitlist" /> Lista de espera</label><label class="check-row"><input type="checkbox" [checked]="s.allowReviews" (change)="s.allowReviews = !s.allowReviews" /> Reseñas</label></div></div>
+            <p class="muted">Pago en línea: {{ s.onlinePayment ? 'activo' : 'inactivo' }}. Se configura en <button type="button" class="btn-link" (click)="selectTab('payments')">Pagos en línea</button>.</p>
             <div class="form-actions"><button class="btn btn-primary" (click)="saveSettings()">Guardar cambios</button>@if (settingsSaved()) { <span class="badge badge-ok" role="status"><app-ui-icon name="check" /> Guardado</span> }</div>
           </div>
         </section>
@@ -303,6 +272,7 @@ export class OwnerPanelPage implements OnInit {
     { id: 'staff', label: 'Empleados', icon: 'users' },
     { id: 'loyalty', label: 'Fidelización', icon: 'gift' },
     { id: 'subscription', label: 'Suscripción', icon: 'credit-card' },
+    { id: 'payments', label: 'Pagos en línea', icon: 'wallet' },
 
     { id: 'settings', label: 'Ajustes', icon: 'settings' },
   ];
@@ -320,16 +290,6 @@ export class OwnerPanelPage implements OnInit {
   settings = signal<Settings | null>(null);
   loyalty = signal<Loyalty | null>(null);
   appts = signal<Appointment[]>([]);
-  plans = signal<Plan[]>([]);
-  payments = signal<Payment[]>([]);
-  sub = signal<SubState | null>(null);
-  paying = signal(false);
-  payError = signal('');
-  autoBusy = signal(false);
-  autoError = signal('');
-  autoDone = signal(false);
-  autoPlanId = '';
-  autoEmail = '';
   settingsSaved = signal(false);
   loyaltySaved = signal(false);
   staffSaved = signal(false);
@@ -345,6 +305,7 @@ export class OwnerPanelPage implements OnInit {
 
   // Edición de horario/servicios de un empleado concreto.
   editStaff = signal<string | null>(null);
+  stEdit: { fullName: string; title: string; photoUrl: string | null; isActive: boolean } = { fullName: '', title: '', photoUrl: null, isActive: true };
   staffSvc = signal<Set<string>>(new Set());
   dayOn = signal<Record<number, boolean>>({});
   dayStart = signal<Record<number, string>>({});
@@ -369,100 +330,6 @@ export class OwnerPanelPage implements OnInit {
     this.feedback.set(null);
     if (id === 'summary') this.loadOnboarding();
     if (id === 'appointments') this.loadAppts();
-    if (id === 'subscription') this.loadBilling();
-  }
-
-  loadBilling(): void {
-    this.api.get<Plan[]>('/plans').subscribe({ next: (p) => this.plans.set(p) });
-    this.api.get<Payment[]>('/billing/payments').subscribe({ next: (p) => this.payments.set(p) });
-    this.api.get<SubState>('/billing/subscription').subscribe({ next: (s) => this.sub.set(s) });
-  }
-
-  subLabel(status: string): string {
-    return { trial: 'Prueba gratis', active: 'Activa', past_due: 'Pago vencido', cancelled: 'Cancelada' }[status] ?? status;
-  }
-
-  /** Carga el widget.js de Wompi una sola vez. */
-  private loadWompiWidget(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (window.WidgetCheckout) return resolve();
-      const s = document.createElement('script');
-      s.src = 'https://checkout.wompi.co/widget.js';
-      s.onload = () => resolve();
-      s.onerror = () => reject(new Error('No se pudo cargar Wompi'));
-      document.head.appendChild(s);
-    });
-  }
-
-  /**
-   * Activa el cobro automático: abre el widget de Wompi para tokenizar la
-   * tarjeta y envía el token al backend, que crea la fuente de pago.
-   */
-  async startAutoRenew(): Promise<void> {
-    this.autoError.set('');
-    this.autoDone.set(false);
-    if (!this.autoPlanId || !this.autoEmail) { this.autoError.set('Elige plan y correo'); return; }
-    this.autoBusy.set(true);
-    try {
-      const acc = await new Promise<AcceptanceResponse>((res, rej) =>
-        this.api.get<AcceptanceResponse>('/billing/acceptance').subscribe({ next: res, error: rej }));
-      await this.loadWompiWidget();
-      if (!window.WidgetCheckout) throw new Error('Widget no disponible');
-
-      const checkout = new window.WidgetCheckout({
-        currency: 'COP',
-        amountInCents: 0,
-        reference: `tok_${Date.now()}`,
-        publicKey: acc.publicKey,
-        // Operación de tokenización de tarjeta.
-        widgetOperation: 'tokenize',
-      });
-      checkout.open((result) => {
-        const token = result?.token;
-        if (!token) { this.autoBusy.set(false); this.autoError.set('No se recibió la tarjeta'); return; }
-        this.api.post('/billing/auto-renew', { cardToken: token, payerEmail: this.autoEmail, planId: this.autoPlanId })
-          .subscribe({
-            next: () => { this.autoBusy.set(false); this.autoDone.set(true); this.loadBilling(); },
-            error: (e) => { this.autoBusy.set(false); this.autoError.set(e?.error?.error ?? 'No se pudo activar'); },
-          });
-      });
-    } catch (e) {
-      this.autoBusy.set(false);
-      this.autoError.set(e instanceof Error ? e.message : 'Error al activar el cobro');
-    }
-  }
-
-  cancelAutoRenew(): void {
-    this.api.post('/billing/auto-renew/cancel', {}).subscribe({
-      next: () => { this.loadBilling(); this.notify('Se desactivó el cobro automático.', 'ok'); },
-      error: () => this.notify('No se pudo desactivar el cobro automático.'),
-    });
-  }
-
-  /**
-   * Crea el checkout en el backend y redirige al Web Checkout de Wompi con los
-   * parámetros firmados. Al volver, Wompi notifica al webhook que renueva.
-   */
-  pay(planId: string): void {
-    this.paying.set(true);
-    this.payError.set('');
-    this.api.post<CheckoutResponse>('/billing/checkout', { planId, periodMonths: 1 }).subscribe({
-      next: (c) => {
-        const params = new URLSearchParams({
-          'public-key': c.publicKey,
-          currency: c.currency,
-          'amount-in-cents': String(c.amountInCents),
-          reference: c.reference,
-          'redirect-url': c.redirectUrl,
-        });
-        if (c.signatureIntegrity) params.set('signature:integrity', c.signatureIntegrity);
-        window.location.href = `https://checkout.wompi.co/p/?${params.toString()}`;
-      },
-      error: (e) => {
-        this.paying.set(false);
-        this.payError.set(e?.error?.error ?? 'No se pudo iniciar el pago');
-      },
-    });
   }
 
   onApptDate(e: Event): void {
@@ -479,6 +346,8 @@ export class OwnerPanelPage implements OnInit {
   toggleStaffEdit(id: string): void {
     if (this.editStaff() === id) { this.editStaff.set(null); return; }
     this.editStaff.set(id);
+    const st = this.staff().find((x) => x.id === id);
+    this.stEdit = { fullName: st?.fullName ?? '', title: st?.title ?? '', photoUrl: st?.photoUrl ?? null, isActive: st?.isActive ?? true };
     this.staffSvc.set(new Set());
     this.dayOn.set({}); this.dayStart.set({}); this.dayEnd.set({});
   }
@@ -488,6 +357,14 @@ export class OwnerPanelPage implements OnInit {
   toggleDay(w: number): void { this.dayOn.update((m) => ({ ...m, [w]: !m[w] })); }
   setDayStart(w: number, e: Event): void { this.dayStart.update((m) => ({ ...m, [w]: (e.target as HTMLInputElement).value })); }
   setDayEnd(w: number, e: Event): void { this.dayEnd.update((m) => ({ ...m, [w]: (e.target as HTMLInputElement).value })); }
+
+  saveStaffProfile(id: string): void {
+    if (this.stEdit.fullName.trim().length < 2) { this.notify('Escribe el nombre del empleado.'); return; }
+    this.api.put(`/staff/${id}`, { fullName: this.stEdit.fullName.trim(), title: this.stEdit.title.trim() || null, photoUrl: this.stEdit.photoUrl, isActive: this.stEdit.isActive }).subscribe({
+      next: () => { this.flashStaffSaved(); this.notify('Perfil del empleado guardado.', 'ok'); this.api.get<StaffRow[]>('/staff').subscribe({ next: (s) => this.staff.set(s) }); },
+      error: (e) => this.notify(e?.error?.error ?? 'No se pudo guardar el perfil.'),
+    });
+  }
 
   saveStaffServices(id: string): void {
     this.api.put(`/staff/${id}/services`, { serviceIds: [...this.staffSvc()] }).subscribe({
@@ -516,7 +393,7 @@ export class OwnerPanelPage implements OnInit {
     if (!l) return;
     this.api.put('/loyalty/settings', l).subscribe({
       next: () => { this.loyaltySaved.set(true); setTimeout(() => this.loyaltySaved.set(false), 2000); },
-      error: () => this.notify('No se pudo guardar la fidelización.'),
+      error: (e) => this.notify(e?.error?.error ?? 'No se pudo guardar la fidelización.'),
     });
   }
 
@@ -525,7 +402,7 @@ export class OwnerPanelPage implements OnInit {
     this.api.post('/services', { name: this.svcName, durationMinutes: this.svcDuration, priceCop: this.svcPrice })
       .subscribe({
         next: () => { this.svcName = ''; this.notify('Servicio creado correctamente.', 'ok'); this.api.get<Service[]>('/services').subscribe({ next: (s) => this.services.set(s) }); },
-        error: () => this.notify('No se pudo crear el servicio.'),
+        error: (e) => this.notify(e?.error?.error ?? 'No se pudo crear el servicio.'),
       });
   }
 

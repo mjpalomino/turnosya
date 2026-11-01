@@ -257,6 +257,19 @@ const PAGE_SIZE = 24;
           <a routerLink="/registro-negocio">Registrar negocio</a>
           <a routerLink="/login">Ingresar</a>
         </nav>
+        @if (platform.contact(); as c) {
+          <div class="mk-footer-contact" aria-label="Contacto">
+            @if (c.whatsapp) { <a [href]="'https://wa.me/' + c.whatsapp" target="_blank" rel="noopener noreferrer"><app-ui-icon name="whatsapp" /> WhatsApp</a> }
+            @if (c.phone) { <a [href]="'tel:' + c.phone"><app-ui-icon name="phone" /> {{ c.phone }}</a> }
+            @if (c.email) { <a [href]="'mailto:' + c.email"><app-ui-icon name="mail" /> {{ c.email }}</a> }
+            @if (c.address || c.city) { <span><app-ui-icon name="map-pin" /> {{ c.address }}{{ c.address && c.city ? ', ' : '' }}{{ c.city }}</span> }
+            @if (c.supportHours) { <span><app-ui-icon name="clock" /> {{ c.supportHours }}</span> }
+            @if (c.instagram) { <a [href]="social('instagram', c.instagram)" target="_blank" rel="noopener noreferrer"><app-ui-icon name="instagram" /> Instagram</a> }
+            @if (c.facebook) { <a [href]="social('facebook', c.facebook)" target="_blank" rel="noopener noreferrer"><app-ui-icon name="facebook" /> Facebook</a> }
+            @if (c.tiktok) { <a [href]="social('tiktok', c.tiktok)" target="_blank" rel="noopener noreferrer"><app-ui-icon name="tiktok" /> TikTok</a> }
+            @if (c.website) { <a [href]="c.website" target="_blank" rel="noopener noreferrer"><app-ui-icon name="globe" /> Sitio web</a> }
+          </div>
+        }
         <small>© {{ year }} {{ platform.branding().brandName }}</small>
       </div>
     </footer>
@@ -273,6 +286,14 @@ export class HomePage implements OnInit, OnDestroy {
   platform = inject(PlatformService);
 
   year = new Date().getFullYear();
+
+  /** Link de una red social a partir de una URL o un @usuario. */
+  social(kind: 'instagram' | 'facebook' | 'tiktok', raw: string): string {
+    const v = raw.trim();
+    if (/^https?:\/\//i.test(v)) return v;
+    const h = v.replace(/^@/, '');
+    return kind === 'instagram' ? `https://instagram.com/${h}` : kind === 'facebook' ? `https://facebook.com/${h}` : `https://www.tiktok.com/@${h}`;
+  }
   skeletons = [1, 2, 3, 4, 5, 6];
 
   q = '';
@@ -301,6 +322,7 @@ export class HomePage implements OnInit, OnDestroy {
   accountLabel = computed(() => ({ superadmin: 'Administración', owner: 'Mi negocio', staff: 'Mi agenda', customer: 'Mis citas' })[this.auth.role() ?? 'customer']);
 
   ngOnInit(): void {
+    this.platform.loadContact();
     const qp = this.route.snapshot.queryParamMap;
     this.q = qp.get('q') ?? '';
     this.city = qp.get('ciudad') ?? '';

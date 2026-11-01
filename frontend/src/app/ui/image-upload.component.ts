@@ -18,7 +18,7 @@ import { UiIconComponent } from './icon.component';
          (dragover)="onDragOver($event)" (dragleave)="dragging.set(false)" (drop)="onDrop($event)">
       <div class="upload-preview" [class.empty]="!value">
         @if (value) { <img [src]="value" [alt]="label" /> }
-        @else { <app-ui-icon [name]="shape === 'wide' ? 'image' : 'store'" /> }
+        @else { <app-ui-icon [name]="shape === 'wide' ? 'image' : (kind === 'staff_photo' ? 'user' : 'store')" /> }
         @if (busy()) { <span class="upload-busy"><span class="spinner" aria-hidden="true"></span></span> }
       </div>
       <div class="upload-body">
@@ -43,7 +43,7 @@ export class ImageUploadComponent {
   private api = inject(ApiService);
   private static seq = 0;
 
-  @Input({ required: true }) kind: 'logo' | 'cover' | 'platform_logo' = 'logo';
+  @Input({ required: true }) kind: 'logo' | 'cover' | 'platform_logo' | 'staff_photo' = 'logo';
   @Input() value: string | null | undefined = null;
   @Input() label = 'Logo';
   @Input() hint = 'PNG, JPG o WebP. Se ajusta automáticamente.';

@@ -34,6 +34,7 @@ export class AuthService {
     password: string;
     phone?: string;
     categoryId?: string;
+    referralCode?: string;
     city?: string;
   }): Observable<LoginResponse> {
     return this.http

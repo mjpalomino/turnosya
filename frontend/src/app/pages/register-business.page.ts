@@ -1,6 +1,6 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router, RouterLink, ActivatedRoute } from '@angular/router';
 import { AuthShowcaseComponent } from '../ui/auth-showcase.component';
 import { UiIconComponent } from '../ui/icon.component';
 import { AuthService } from '../core/auth.service';
@@ -43,6 +43,7 @@ import type { Category } from '../core/models';
                 <div class="field"><label for="business-phone">Teléfono (opcional)</label><input id="business-phone" name="phone" class="input" type="tel" [(ngModel)]="phone" autocomplete="tel" /></div>
               </div>
               <div class="field"><label for="business-email">Correo electrónico</label><input id="business-email" name="email" class="input" type="email" [(ngModel)]="email" autocomplete="email" placeholder="nombre&#64;ejemplo.com" required /></div>
+              <div class="field"><label for="business-ref">Código de referido (opcional)</label><input id="business-ref" name="referralCode" class="input" [(ngModel)]="referralCode" maxlength="20" placeholder="Si otro negocio te recomendó" style="text-transform:uppercase" /><span class="input-hint">Te da un descuento en tu primer pago.</span></div>
               <div class="field"><label for="business-password">Contraseña</label><input id="business-password" name="password" class="input" type="password" [(ngModel)]="password" autocomplete="new-password" minlength="6" required /><span class="input-hint">Mínimo 6 caracteres.</span></div>
               @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
               <button type="submit" class="btn btn-primary btn-block btn-lg" [disabled]="loading()" [attr.aria-busy]="loading()">
@@ -70,11 +71,15 @@ export class RegisterBusinessPage implements OnInit {
   email = '';
   phone = '';
   password = '';
+  referralCode = '';
+  private route = inject(ActivatedRoute);
   loading = signal(false);
   error = signal('');
 
   ngOnInit(): void {
     this.api.get<Category[]>('/directory/categories').subscribe({ next: (c) => this.categories.set(c) });
+    const ref = this.route.snapshot.queryParamMap.get('ref');
+    if (ref) this.referralCode = ref.slice(0, 20);
   }
 
   submit(): void {
@@ -94,6 +99,7 @@ export class RegisterBusinessPage implements OnInit {
         phone: this.phone || undefined,
         categoryId: this.categoryId || undefined,
         city: this.city.trim() || undefined,
+        referralCode: this.referralCode.trim() || undefined,
       })
       .subscribe({
         next: () => {

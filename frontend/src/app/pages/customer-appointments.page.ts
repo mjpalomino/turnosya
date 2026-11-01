@@ -2,10 +2,11 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/api.service';
+import { goToWompi } from '../core/wompi';
 import { AuthService } from '../core/auth.service';
 import { UiIconComponent } from '../ui/icon.component';
 import { BrandLockupComponent } from '../ui/brand-lockup.component';
-import type { Appointment, LoyaltyCard } from '../core/models';
+import type { Appointment, LoyaltyCard, WompiCheckout } from '../core/models';
 
 /** Panel del cliente: sus citas y su tarjeta de fidelización. */
 @Component({
@@ -39,7 +40,11 @@ import type { Appointment, LoyaltyCard } from '../core/models';
             <article class="card section-stack" style="gap:1rem">
               <div class="record-card" style="padding:0;border:0;box-shadow:none">
                 <div class="record-main">@if (a.businessName) { <a class="record-business" [routerLink]="['/', a.businessSlug]"><app-ui-icon name="store" /> {{ a.businessName }}</a> }<strong class="record-title">{{ a.serviceName }}</strong><span class="record-meta"><app-ui-icon name="calendar" /> {{ a.startsAt | date:'EEE d MMM, HH:mm' }}</span>@if (a.staffName) { <span class="record-meta">Con {{ a.staffName }}</span> }<span class="badge" [class]="badgeClass(a.status)">{{ label(a.status) }}</span></div>
-                @if (a.status === 'booked' || a.status === 'confirmed') { <button class="btn btn-outline-danger btn-sm" (click)="cancel(a)">Cancelar cita</button> }
+                <div class="data-pair">
+                  @if (a.paymentStatus === 'paid') { <span class="badge badge-ok"><app-ui-icon name="check" /> Pagada</span> }
+                  @if (a.canPay) { <button class="btn btn-primary btn-sm" [disabled]="paying() === a.id" [attr.aria-busy]="paying() === a.id" (click)="pay(a)">@if (paying() === a.id) { <span class="spinner"></span> } @else { <app-ui-icon name="credit-card" /> } Pagar en línea</button> }
+                  @if (a.status === 'booked' || a.status === 'confirmed') { <button class="btn btn-outline-danger btn-sm" (click)="cancel(a)">Cancelar cita</button> }
+                </div>
               </div>
               @if (a.status === 'completed' && !reviewed().has(a.id)) {
                 <div class="review">
@@ -89,6 +94,15 @@ export class CustomerAppointmentsPage implements OnInit {
 
   load(): void {
     this.api.get<Appointment[]>('/customer/appointments').subscribe({ next: (r) => this.appts.set(r) });
+  }
+
+  paying = signal('');
+  pay(a: Appointment): void {
+    this.paying.set(a.id);
+    this.api.post<WompiCheckout>(`/payments/appointments/${a.id}/checkout`, {}).subscribe({
+      next: (c) => goToWompi(c),
+      error: (e) => { this.paying.set(''); this.notify(e?.error?.error ?? 'No se pudo iniciar el pago.'); },
+    });
   }
 
   cancel(a: Appointment): void {

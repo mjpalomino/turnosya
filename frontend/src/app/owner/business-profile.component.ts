@@ -15,6 +15,7 @@ interface Branding {
   logoUrl: string | null; coverUrl: string | null; primaryColor: string; secondaryColor: string;
   phone: string | null; whatsappNumber: string | null; email: string | null; address: string | null;
   about: string | null; instagram: string | null; website: string | null;
+  facebook: string | null; tiktok: string | null; openingHours: string | null;
 }
 type SlugState = 'idle' | 'checking' | 'ok' | 'taken' | 'invalid' | 'reserved';
 
@@ -99,7 +100,12 @@ type SlugState = 'idle' | 'checking' | 'ok' | 'taken' | 'invalid' | 'reserved';
               <div class="field"><label for="pf-email">Correo de contacto</label><input id="pf-email" class="input" type="email" [(ngModel)]="b.email" (ngModelChange)="touch()" /></div>
               <div class="field"><label for="pf-ig">Instagram</label><input id="pf-ig" class="input" [(ngModel)]="b.instagram" (ngModelChange)="touch()" placeholder="&#64;tunegocio" /></div>
             </div>
+            <div class="form-columns">
+              <div class="field"><label for="pf-fb">Facebook</label><input id="pf-fb" class="input" [(ngModel)]="b.facebook" (ngModelChange)="touch()" placeholder="https://facebook.com/tunegocio" /></div>
+              <div class="field"><label for="pf-tt">TikTok</label><input id="pf-tt" class="input" [(ngModel)]="b.tiktok" (ngModelChange)="touch()" placeholder="&#64;tunegocio" /></div>
+            </div>
             <div class="field"><label for="pf-web">Sitio web</label><input id="pf-web" class="input" type="url" [(ngModel)]="b.website" (ngModelChange)="touch()" placeholder="https://" /></div>
+            <div class="field"><label for="pf-hours">Horario de atención</label><input id="pf-hours" class="input" [(ngModel)]="b.openingHours" (ngModelChange)="touch()" maxlength="300" placeholder="Ej. Lun a sáb 8:00 a. m. - 7:00 p. m." /><span class="input-hint">Texto informativo para tu página; las horas reservables se configuran en cada empleado.</span></div>
           </section>
 
           <!-- Ubicación -->

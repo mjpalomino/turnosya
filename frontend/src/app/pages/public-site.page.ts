@@ -3,12 +3,13 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/api.service';
+import { goToWompi } from '../core/wompi';
 import { AuthService } from '../core/auth.service';
 import { ThemeService } from '../core/theme.service';
 import { BrandLockupComponent } from '../ui/brand-lockup.component';
 import { InstallButtonComponent } from '../ui/install-button.component';
 import { UiIconComponent } from '../ui/icon.component';
-import type { Availability, PublicSite, Service } from '../core/models';
+import type { Availability, PublicSite, Service, WompiCheckout } from '../core/models';
 
 interface PendingBooking { serviceId: string; date: string; staffId: string; slot: string; }
 const PENDING_KEY = 'turnosya_pending_booking';
@@ -105,7 +106,7 @@ const PENDING_KEY = 'turnosya_pending_booking';
                 @if (availability(); as av) {
                   @if (av.options.length === 0) { <div class="empty-state"><span class="empty-icon"><app-ui-icon name="calendar" /></span><h3>Sin horarios para el {{ date | date:'d MMM' }}</h3><p>Prueba con otro día para encontrar disponibilidad.</p></div> }
                   @for (opt of av.options; track opt.staffId) {
-                    @if (av.options.length > 1 || staffName(opt.staffId)) { <p class="section-kicker slot-staff"><app-ui-icon name="user" /> {{ staffName(opt.staffId) || 'Profesional' }}</p> }
+                    @if (av.options.length > 1 || staffName(opt.staffId)) { <p class="section-kicker slot-staff">@if (staffPhoto(opt.staffId); as ph) { <span class="avatar avatar-sm"><img [src]="ph" alt="" /></span> } @else { <app-ui-icon name="user" /> } {{ staffName(opt.staffId) || 'Profesional' }}@if (staffTitle(opt.staffId); as tt) { <span style="text-transform:none;font-weight:500"> · {{ tt }}</span> }</p> }
                     <div class="slots">
                       @for (slot of opt.slots; track slot) {
                         <button type="button" class="btn btn-ghost slot" [class.selected]="chosenSlot === slot && chosenStaff === opt.staffId"
@@ -127,6 +128,13 @@ const PENDING_KEY = 'turnosya_pending_booking';
                     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
                     @if (done()) {
                       <div class="booking-done" role="status"><app-ui-icon name="check-circle" /><div><strong>¡Turno reservado!</strong><small>Te esperamos el {{ chosenSlot | date:'EEEE d MMM, h:mm a' }}.</small></div></div>
+                      @if (s.onlinePayment?.enabled && lastApptId() && (selectedService()?.priceCop ?? 0) > 0) {
+                        <div class="card form-stack" style="gap:.6rem">
+                          <strong>{{ s.onlinePayment!.chargeMode === 'deposit' ? 'Asegura tu turno con un anticipo del ' + s.onlinePayment!.depositPct + '%' : 'Paga tu turno en línea' }}</strong>
+                          <button type="button" class="btn btn-primary" [disabled]="paying()" [attr.aria-busy]="paying()" (click)="payOnline()">@if (paying()) { <span class="spinner"></span> Abriendo Wompi… } @else { <app-ui-icon name="credit-card" /> Pagar ahora con Wompi }</button>
+                          <small class="muted">También puedes pagar después desde “Mis citas”.</small>
+                        </div>
+                      }
                       <div class="form-actions-row"><a class="btn btn-primary" routerLink="/mis-citas">Ver mis citas</a><button class="btn btn-secondary" (click)="resetBooking()">Pedir otro turno</button></div>
                     } @else {
                       <button type="button" class="btn btn-primary btn-lg" [disabled]="booking()" [attr.aria-busy]="booking()" (click)="book()">
@@ -178,7 +186,10 @@ const PENDING_KEY = 'turnosya_pending_booking';
                 @if (s.branding?.phone) { <li><app-ui-icon name="phone" /><a [href]="'tel:' + s.branding!.phone">{{ s.branding!.phone }}</a></li> }
                 @if (s.branding?.email) { <li><app-ui-icon name="mail" /><a [href]="'mailto:' + s.branding!.email">{{ s.branding!.email }}</a></li> }
                 @if (s.branding?.instagram) { <li><app-ui-icon name="instagram" /><a [href]="instagramUrl()" target="_blank" rel="noopener noreferrer">{{ instagramHandle() }}</a></li> }
+                @if (s.branding?.facebook) { <li><app-ui-icon name="facebook" /><a [href]="socialUrl('facebook', s.branding!.facebook!)" target="_blank" rel="noopener noreferrer">Facebook</a></li> }
+                @if (s.branding?.tiktok) { <li><app-ui-icon name="tiktok" /><a [href]="socialUrl('tiktok', s.branding!.tiktok!)" target="_blank" rel="noopener noreferrer">TikTok</a></li> }
                 @if (s.branding?.website) { <li><app-ui-icon name="globe" /><a [href]="s.branding!.website" target="_blank" rel="noopener noreferrer">Sitio web</a></li> }
+                @if (s.branding?.openingHours) { <li><app-ui-icon name="clock" /><span>{{ s.branding!.openingHours }}</span></li> }
               </ul>
             </div>
           </aside>
@@ -243,6 +254,29 @@ export class PublicSitePage implements OnInit, OnDestroy {
         this.restorePending(s);
       },
       error: () => this.siteError.set('Verifica el link o explora otros negocios de la comunidad.'),
+    });
+  }
+
+  lastApptId = signal('');
+  paying = signal(false);
+
+  staffPhoto(id: string): string | null { return this.site()?.staff?.find((x) => x.id === id)?.photoUrl ?? null; }
+  staffTitle(id: string): string | null { return this.site()?.staff?.find((x) => x.id === id)?.title ?? null; }
+
+  socialUrl(kind: 'facebook' | 'tiktok', raw: string): string {
+    const v = raw.trim();
+    if (/^https?:\/\//i.test(v)) return v;
+    const handle = v.replace(/^@/, '');
+    return kind === 'facebook' ? `https://facebook.com/${handle}` : `https://www.tiktok.com/@${handle}`;
+  }
+
+  payOnline(): void {
+    const id = this.lastApptId();
+    if (!id) return;
+    this.paying.set(true);
+    this.api.post<WompiCheckout>(`/payments/appointments/${id}/checkout`, {}).subscribe({
+      next: (c) => goToWompi(c),
+      error: (e) => { this.paying.set(false); this.error.set(e?.error?.error ?? 'No se pudo iniciar el pago'); },
     });
   }
 
@@ -325,7 +359,7 @@ export class PublicSitePage implements OnInit, OnDestroy {
         customerPhone: this.customerPhone.trim() || undefined,
       })
       .subscribe({
-        next: () => { this.booking.set(false); this.done.set(true); this.clearPending(); },
+        next: (r) => { this.booking.set(false); this.done.set(true); this.lastApptId.set((r as { id?: string })?.id ?? ''); this.clearPending(); },
         error: (e) => {
           this.booking.set(false);
           if (e?.status === 401) { this.auth.logout(); this.error.set('Tu sesión venció. Ingresa de nuevo.'); return; }
@@ -337,6 +371,8 @@ export class PublicSitePage implements OnInit, OnDestroy {
 
   resetBooking(): void {
     this.done.set(false);
+    this.lastApptId.set('');
+    this.paying.set(false);
     this.chosenSlot = '';
     this.chosenStaff = '';
     this.loadAvailability();
