@@ -106,7 +106,7 @@ const PENDING_KEY = 'turnosya_pending_booking';
                 @if (availability(); as av) {
                   @if (av.options.length === 0) { <div class="empty-state"><span class="empty-icon"><app-ui-icon name="calendar" /></span><h3>Sin horarios para el {{ date | date:'d MMM' }}</h3><p>Prueba con otro día para encontrar disponibilidad.</p></div> }
                   @for (opt of av.options; track opt.staffId) {
-                    @if (av.options.length > 1 || staffName(opt.staffId)) { <p class="section-kicker slot-staff">@if (staffPhoto(opt.staffId); as ph) { <span class="avatar avatar-sm"><img [src]="ph" alt="" /></span> } @else { <app-ui-icon name="user" /> } {{ staffName(opt.staffId) || 'Profesional' }}@if (staffTitle(opt.staffId); as tt) { <span style="text-transform:none;font-weight:500"> · {{ tt }}</span> }</p> }
+                    @if (av.options.length > 1 || staffName(opt.staffId)) { <div class="slot-staff-card"><span class="avatar avatar-md">@if (staffPhoto(opt.staffId); as ph) { <img [src]="ph" [alt]="'Foto de ' + staffName(opt.staffId)" /> } @else { <app-ui-icon name="user" /> }</span><span><strong>{{ staffName(opt.staffId) || 'Profesional' }}</strong>@if (staffTitle(opt.staffId); as tt) { <small>{{ tt }}</small> }</span></div> }
                     <div class="slots">
                       @for (slot of opt.slots; track slot) {
                         <button type="button" class="btn btn-ghost slot" [class.selected]="chosenSlot === slot && chosenStaff === opt.staffId"
@@ -123,6 +123,9 @@ const PENDING_KEY = 'turnosya_pending_booking';
                 <div class="booking-step-header"><span class="step-number">03</span><div><h2 class="step-title" id="step-confirm">Confirma tu turno</h2><p>Revisa el resumen y confirma.</p></div></div>
                 @if (auth.role() === 'customer') {
                   <div class="form-stack">
+                    @if (chosenStaff && staffName(chosenStaff)) {
+                      <div class="slot-staff-card confirm-staff"><span class="avatar avatar-md">@if (staffPhoto(chosenStaff); as ph) { <img [src]="ph" [alt]="'Foto de ' + staffName(chosenStaff)" /> } @else { <app-ui-icon name="user" /> }</span><span><small>Te atiende</small><strong>{{ staffName(chosenStaff) }}</strong>@if (staffTitle(chosenStaff); as tt) { <small>{{ tt }}</small> }</span></div>
+                    }
                     <div class="info-row"><span class="info-label">A nombre de</span><strong>{{ auth.user()?.fullName }}</strong></div>
                     <div class="field"><label for="booking-phone">Celular para recordatorio (opcional)</label><input id="booking-phone" class="input" type="tel" [(ngModel)]="customerPhone" autocomplete="tel" placeholder="Número de contacto" [disabled]="done()" /></div>
                     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
@@ -171,7 +174,7 @@ const PENDING_KEY = 'turnosya_pending_booking';
                 <div class="summary-line"><app-ui-icon name="layers" /><div><small>Servicio</small><strong>{{ svc.name }}</strong></div></div>
                 <div class="summary-line"><app-ui-icon name="calendar" /><div><small>Fecha</small><strong>{{ date | date:'EEEE d MMM' }}</strong></div></div>
                 <div class="summary-line"><app-ui-icon name="clock" /><div><small>Hora</small><strong>{{ chosenSlot ? (chosenSlot | date:'h:mm a') : 'Por elegir' }}</strong></div></div>
-                @if (chosenStaff && staffName(chosenStaff)) { <div class="summary-line"><app-ui-icon name="user" /><div><small>Te atiende</small><strong>{{ staffName(chosenStaff) }}</strong></div></div> }
+                @if (chosenStaff && staffName(chosenStaff)) { <div class="summary-line">@if (staffPhoto(chosenStaff); as ph) { <span class="avatar avatar-sm"><img [src]="ph" alt="" /></span> } @else { <app-ui-icon name="user" /> }<div><small>Te atiende</small><strong>{{ staffName(chosenStaff) }}</strong></div></div> }
                 <div class="summary-total"><span>Total</span><strong>{{ svc.priceCop | number }} COP</strong></div>
               } @else {
                 <p class="booking-placeholder">Selecciona un servicio para ver los detalles de tu cita aquí.</p>

@@ -876,3 +876,15 @@ select.input.mk-select { width: auto; min-height: 42px; padding-block: .45rem; f
 @media (max-width: 640px) { .bar-chart { height: 140px; gap: .4rem; } }
 
 .section-heading { flex-wrap: wrap; }
+
+/* Profesional en la reserva: foto visible al elegir horario y al confirmar */
+.avatar-md { width: 52px; height: 52px; }
+.slot-staff-card { display: flex; align-items: center; gap: .75rem; margin: .5rem 0 .65rem; }
+.slot-staff-card strong { display: block; font-size: .95rem; }
+.slot-staff-card small { display: block; color: var(--text-muted); font-size: .8rem; }
+.slots + .slot-staff-card { margin-top: 1.1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+.confirm-staff { padding: .75rem; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); margin: 0; }
+.summary-line .avatar-sm { width: 32px; height: 32px; }
+
+.sheet-steps li p { margin: 0; line-height: 1.45; }
+.sheet-steps li p svg { display: inline-block; vertical-align: -3px; width: 17px; height: 17px; }
