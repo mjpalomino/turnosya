@@ -15,13 +15,38 @@
 import { createHash } from 'node:crypto';
 import { config } from '../config.ts';
 
+/**
+ * Credenciales de una cuenta Wompi. Para la plataforma salen de la configuración
+ * del superadmin (BD, cifradas) o de las variables de entorno (lib/wompi-config.ts);
+ * para un negocio, de su propia configuración. Si no se pasan, se usan las de entorno.
+ */
+export interface WompiCreds {
+  environment: 'test' | 'prod';
+  publicKey: string | null;
+  privateKey: string | null;
+  integritySecret: string | null;
+  eventsSecret: string | null;
+}
+
+/** Credenciales de la plataforma tomadas solo de las variables de entorno. */
+export function envCreds(): WompiCreds {
+  return {
+    environment: config.PLATFORM_WOMPI_ENVIRONMENT,
+    publicKey: config.PLATFORM_WOMPI_PUBLIC_KEY ?? null,
+    privateKey: config.PLATFORM_WOMPI_PRIVATE_KEY ?? null,
+    integritySecret: config.PLATFORM_WOMPI_INTEGRITY_SECRET ?? null,
+    eventsSecret: config.PLATFORM_WOMPI_EVENTS_SECRET ?? null,
+  };
+}
+
 /** Firma de integridad para el checkout. */
 export function integritySignature(
   reference: string,
   amountInCents: number,
   currency = 'COP',
+  integritySecret?: string | null,
 ): string | null {
-  const secret = config.PLATFORM_WOMPI_INTEGRITY_SECRET;
+  const secret = integritySecret === undefined ? config.PLATFORM_WOMPI_INTEGRITY_SECRET : integritySecret;
   if (!secret) return null;
   const payload = `${reference}${amountInCents}${currency}${secret}`;
   return createHash('sha256').update(payload).digest('hex');
@@ -50,8 +75,12 @@ export interface WompiEvent {
  * Concatena, EN ORDEN, los valores de signature.properties (leídos de `data`),
  * luego el timestamp, luego el secreto de eventos, y compara el SHA256.
  */
-export function verifyEventSignature(body: WompiEvent, headerChecksum?: string): boolean {
-  const secret = config.PLATFORM_WOMPI_EVENTS_SECRET;
+export function verifyEventSignature(
+  body: WompiEvent,
+  headerChecksum?: string,
+  eventsSecret?: string | null,
+): boolean {
+  const secret = eventsSecret === undefined ? config.PLATFORM_WOMPI_EVENTS_SECRET : eventsSecret;
   if (!secret) return false;
   const props = body.signature?.properties;
   const checksum = headerChecksum || body.signature?.checksum;
@@ -72,10 +101,10 @@ export function verifyEventSignature(body: WompiEvent, headerChecksum?: string):
 }
 
 /** Genera una referencia única para un pago (sin guiones para compatibilidad). */
-export function newReference(tenantId: string): string {
+export function newReference(tenantId: string, prefix = 'sub'): string {
   const stamp = Date.now().toString(36);
   const rnd = Math.random().toString(36).slice(2, 8);
-  return `sub_${tenantId.replace(/-/g, '').slice(0, 8)}_${stamp}${rnd}`.toUpperCase();
+  return `${prefix}_${tenantId.replace(/-/g, '').slice(0, 8)}_${stamp}${rnd}`.toUpperCase();
 }
 
 // ===================================================================
@@ -83,14 +112,14 @@ export function newReference(tenantId: string): string {
 // ===================================================================
 
 /** URL base del API según ambiente. */
-export function wompiApiBase(): string {
-  return config.PLATFORM_WOMPI_ENVIRONMENT === 'prod'
+export function wompiApiBase(environment: 'test' | 'prod' = config.PLATFORM_WOMPI_ENVIRONMENT): string {
+  return environment === 'prod'
     ? 'https://production.wompi.co/v1'
     : 'https://sandbox.wompi.co/v1';
 }
 
-async function wompiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${wompiApiBase()}${path}`, init);
+async function wompiFetch<T>(path: string, init?: RequestInit, environment?: 'test' | 'prod'): Promise<T> {
+  const res = await fetch(`${wompiApiBase(environment)}${path}`, init);
   const json = (await res.json()) as T & { error?: unknown };
   if (!res.ok) {
     throw new Error(`Wompi ${path} -> ${res.status}: ${JSON.stringify(json)}`);
@@ -104,13 +133,13 @@ interface AcceptanceTokens {
 }
 
 /** Obtiene los tokens de aceptación (política de datos) usando la llave pública. */
-export async function getAcceptanceTokens(): Promise<{
+export async function getAcceptanceTokens(creds: WompiCreds = envCreds()): Promise<{
   acceptanceToken: string;
   personalAuthToken: string;
 }> {
-  const pub = config.PLATFORM_WOMPI_PUBLIC_KEY;
-  if (!pub) throw new Error('Falta PLATFORM_WOMPI_PUBLIC_KEY');
-  const data = await wompiFetch<{ data: AcceptanceTokens }>(`/merchants/${pub}`);
+  const pub = creds.publicKey;
+  if (!pub) throw new Error('Falta la llave pública de Wompi');
+  const data = await wompiFetch<{ data: AcceptanceTokens }>(`/merchants/${pub}`, undefined, creds.environment);
   return {
     acceptanceToken: data.data.presigned_acceptance.acceptance_token,
     personalAuthToken: data.data.presigned_personal_data_auth.acceptance_token,
@@ -126,9 +155,9 @@ export async function createPaymentSource(args: {
   customerEmail: string;
   acceptanceToken: string;
   personalAuthToken: string;
-}): Promise<string> {
-  const key = config.PLATFORM_WOMPI_PRIVATE_KEY;
-  if (!key) throw new Error('Falta PLATFORM_WOMPI_PRIVATE_KEY');
+}, creds: WompiCreds = envCreds()): Promise<string> {
+  const key = creds.privateKey;
+  if (!key) throw new Error('Falta la llave privada de Wompi');
   const data = await wompiFetch<{ data: { id: number } }>(`/payment_sources`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
@@ -139,7 +168,7 @@ export async function createPaymentSource(args: {
       acceptance_token: args.acceptanceToken,
       accept_personal_auth: args.personalAuthToken,
     }),
-  });
+  }, creds.environment);
   return String(data.data.id);
 }
 
@@ -153,10 +182,10 @@ export async function chargeRecurring(args: {
   amountInCents: number;
   reference: string;
   customerEmail: string;
-}): Promise<{ id: string; status: string }> {
-  const key = config.PLATFORM_WOMPI_PRIVATE_KEY;
-  if (!key) throw new Error('Falta PLATFORM_WOMPI_PRIVATE_KEY');
-  const signature = integritySignature(args.reference, args.amountInCents, 'COP');
+}, creds: WompiCreds = envCreds()): Promise<{ id: string; status: string }> {
+  const key = creds.privateKey;
+  if (!key) throw new Error('Falta la llave privada de Wompi');
+  const signature = integritySignature(args.reference, args.amountInCents, 'COP', creds.integritySecret);
   const data = await wompiFetch<{ data: { id: string; status: string } }>(`/transactions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
@@ -169,7 +198,7 @@ export async function chargeRecurring(args: {
       recurrent: true,
       ...(signature ? { signature } : {}),
     }),
-  });
+  }, creds.environment);
   return { id: String(data.data.id), status: data.data.status };
 }
 
@@ -184,9 +213,9 @@ export async function tokenizeCard(card: {
   expMonth: string;
   expYear: string;
   cardHolder: string;
-}): Promise<string> {
-  const pub = config.PLATFORM_WOMPI_PUBLIC_KEY;
-  if (!pub) throw new Error('Falta PLATFORM_WOMPI_PUBLIC_KEY');
+}, creds: WompiCreds = envCreds()): Promise<string> {
+  const pub = creds.publicKey;
+  if (!pub) throw new Error('Falta la llave pública de Wompi');
   const data = await wompiFetch<{ data: { id: string } }>(`/tokens/cards`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${pub}` },
@@ -197,12 +226,15 @@ export async function tokenizeCard(card: {
       exp_year: card.expYear,
       card_holder: card.cardHolder,
     }),
-  });
+  }, creds.environment);
   return data.data.id;
 }
 
 /** Consulta el estado actual de una transacción por su id. */
-export async function getTransaction(id: string): Promise<{ id: string; status: string }> {
-  const data = await wompiFetch<{ data: { id: string; status: string } }>(`/transactions/${id}`);
+export async function getTransaction(
+  id: string,
+  environment?: 'test' | 'prod',
+): Promise<{ id: string; status: string }> {
+  const data = await wompiFetch<{ data: { id: string; status: string } }>(`/transactions/${id}`, undefined, environment);
   return { id: String(data.data.id), status: data.data.status };
 }

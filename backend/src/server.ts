@@ -23,6 +23,8 @@ import billingRoutes from './routes/billing.ts';
 import directoryRoutes from './routes/directory.ts';
 import mediaRoutes from './routes/media.ts';
 import platformRoutes from './routes/platform.ts';
+import adminCommercialRoutes from './routes/admin-commercial.ts';
+import paymentRoutes from './routes/payments.ts';
 
 export async function buildServer() {
   const app = Fastify({
@@ -47,9 +49,11 @@ export async function buildServer() {
   // Planes activos (público; usado por la pantalla de suscripción del dueño).
   app.get('/api/plans', async () => {
     const { rows } = await pool.query(
-      `SELECT id, name, price_cop AS "priceCop", max_staff AS "maxStaff",
+      `SELECT id, name, description, price_cop AS "priceCop", max_staff AS "maxStaff",
               max_branches AS "maxBranches", max_services AS "maxServices",
-              features, is_active AS "isActive", sort_order AS "sortOrder"
+              features, is_active AS "isActive", sort_order AS "sortOrder",
+              discount_quarterly_pct::float AS "discountQuarterlyPct",
+              discount_semiannual_pct::float AS "discountSemiannualPct"
        FROM plans WHERE is_active = true ORDER BY sort_order, name`,
     );
     return rows;
@@ -75,6 +79,8 @@ export async function buildServer() {
   await app.register(tenantRoutes, { prefix: '/api/tenant' });
   await app.register(billingRoutes, { prefix: '/api/billing' });
   await app.register(superadminRoutes, { prefix: '/api/admin' });
+  await app.register(adminCommercialRoutes, { prefix: '/api/admin' });
+  await app.register(paymentRoutes, { prefix: '/api/payments' });
 
   return app;
 }

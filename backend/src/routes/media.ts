@@ -1,5 +1,5 @@
 /**
- * Carga y entrega de imágenes (logo y portada del negocio, logo de la plataforma).
+ * Carga y entrega de imágenes (logo y portada del negocio, foto de empleados, logo de la plataforma).
  *  - POST /api/media/upload   (owner | superadmin) recibe { kind, dataUrl } en base64
  *  - GET  /api/media/:id      (público) entrega la imagen con caché larga
  *
@@ -16,7 +16,7 @@ import { parseOr400 } from '../lib/validation.ts';
 import { decodeImageDataUrl, MAX_IMAGE_BYTES } from '../lib/image.ts';
 
 const uploadSchema = z.object({
-  kind: z.enum(['logo', 'cover', 'platform_logo']),
+  kind: z.enum(['logo', 'cover', 'platform_logo', 'staff_photo']),
   dataUrl: z.string().min(30).max(3_000_000),
 });
 
@@ -57,7 +57,8 @@ export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
             AND m.created_at < now() - interval '1 hour'
             AND NOT EXISTS (SELECT 1 FROM tenant_branding b
                              WHERE b.logo_url = '/api/media/' || m.id OR b.cover_url = '/api/media/' || m.id)
-            AND NOT EXISTS (SELECT 1 FROM platform_branding p WHERE p.logo_url = '/api/media/' || m.id)`,
+            AND NOT EXISTS (SELECT 1 FROM platform_branding p WHERE p.logo_url = '/api/media/' || m.id)
+            AND NOT EXISTS (SELECT 1 FROM staff_profiles sp WHERE sp.photo_url = '/api/media/' || m.id)`,
         [body.kind, tenantId, id],
       );
 

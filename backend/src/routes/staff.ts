@@ -3,7 +3,7 @@
  * con rol 'staff', horario semanal y servicios que presta.
  *  - GET    /api/staff                 (owner)
  *  - POST   /api/staff                 (owner) crea usuario staff + perfil
- *  - PUT    /api/staff/:id             (owner)
+ *  - PUT    /api/staff/:id             (owner) nombre, cargo, foto, sede y estado
  *  - PUT    /api/staff/:id/schedule    (owner) reemplaza el horario semanal
  *  - PUT    /api/staff/:id/services    (owner) asigna servicios
  */
@@ -11,7 +11,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { query, withTransaction } from '../db/pool.ts';
 import { hashPassword } from '../lib/password.ts';
-import { parseOr400 } from '../lib/validation.ts';
+import { imageUrlSchema, parseOr400 } from '../lib/validation.ts';
+import { getEntitlements } from '../lib/plan-features.ts';
 
 const createSchema = z.object({
   fullName: z.string().min(2).max(100),
@@ -20,6 +21,27 @@ const createSchema = z.object({
   title: z.string().max(100).optional(),
   branchId: z.string().uuid().optional(),
 });
+
+const updateSchema = z.object({
+  fullName: z.string().trim().min(2).max(100),
+  title: z.preprocess((v) => (typeof v === 'string' && !v.trim() ? null : v), z.string().trim().max(100).nullable().optional()),
+  photoUrl: z.preprocess((v) => (typeof v === 'string' && !v.trim() ? null : v), imageUrlSchema.nullable().optional()),
+  branchId: z.string().uuid().nullable().optional(),
+  isActive: z.boolean().default(true),
+});
+
+/** Verifica el límite de empleados activos del plan. Devuelve el mensaje de error o null. */
+async function staffLimitError(tenantId: string, extra = 1): Promise<string | null> {
+  const ent = await getEntitlements(tenantId);
+  const max = ent.limits.maxStaff;
+  if (max === null) return null;
+  const { rows } = await query<{ n: number }>(
+    'SELECT count(*)::int AS n FROM staff_profiles WHERE tenant_id=$1 AND is_active', [tenantId]);
+  if ((rows[0]?.n ?? 0) + extra > max) {
+    return `Tu plan ${ent.planName ?? ''} permite hasta ${max} empleados activos. Cambia de plan para agregar más.`.replace('  ', ' ');
+  }
+  return null;
+}
 
 const scheduleSchema = z.object({
   slots: z
@@ -41,7 +63,7 @@ export default async function staffRoutes(app: FastifyInstance): Promise<void> {
   app.get('/', owner, async (req) => {
     const { rows } = await query(
       `SELECT sp.id, sp.title, sp.branch_id AS "branchId", sp.is_active AS "isActive",
-              u.full_name AS "fullName", u.email
+              sp.photo_url AS "photoUrl", u.full_name AS "fullName", u.email
        FROM staff_profiles sp JOIN users u ON u.id = sp.user_id
        WHERE sp.tenant_id = $1 ORDER BY u.full_name`,
       [req.user.tenantId],
@@ -52,6 +74,9 @@ export default async function staffRoutes(app: FastifyInstance): Promise<void> {
   app.post('/', owner, async (req, reply) => {
     const body = parseOr400(createSchema, req.body, reply);
     if (!body) return;
+
+    const limit = await staffLimitError(req.user.tenantId!);
+    if (limit) return reply.code(403).send({ error: limit, code: 'PLAN_LIMIT' });
 
     const dup = await query('SELECT 1 FROM users WHERE lower(email)=lower($1)', [body.email]);
     if (dup.rowCount) return reply.code(409).send({ error: 'Ese correo ya existe' });
@@ -71,6 +96,31 @@ export default async function staffRoutes(app: FastifyInstance): Promise<void> {
       return staff.rows[0]!.id;
     });
     return reply.code(201).send({ id: result });
+  });
+
+  app.put('/:id', owner, async (req, reply) => {
+    const body = parseOr400(updateSchema, req.body, reply);
+    if (!body) return;
+    const staffId = (req.params as { id: string }).id;
+    if (!z.string().uuid().safeParse(staffId).success) return reply.code(404).send({ error: 'No encontrado' });
+    const cur = await query<{ user_id: string; is_active: boolean }>(
+      'SELECT user_id, is_active FROM staff_profiles WHERE id=$1 AND tenant_id=$2', [staffId, req.user.tenantId]);
+    const row = cur.rows[0];
+    if (!row) return reply.code(404).send({ error: 'No encontrado' });
+    if (body.isActive && !row.is_active) {
+      const limit = await staffLimitError(req.user.tenantId!);
+      if (limit) return reply.code(403).send({ error: limit, code: 'PLAN_LIMIT' });
+    }
+    await withTransaction(async (client) => {
+      await client.query(
+        `UPDATE staff_profiles SET title=$1, photo_url=$2,
+                branch_id=(SELECT id FROM branches WHERE id=$3 AND tenant_id=$5), is_active=$4
+          WHERE id=$6`,
+        [body.title ?? null, body.photoUrl ?? null, body.branchId ?? null, body.isActive, req.user.tenantId, staffId],
+      );
+      await client.query('UPDATE users SET full_name=$1, is_active=$2 WHERE id=$3', [body.fullName, body.isActive, row.user_id]);
+    });
+    return { ok: true };
   });
 
   app.put('/:id/schedule', owner, async (req, reply) => {

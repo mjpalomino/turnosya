@@ -26,10 +26,17 @@ export async function seed(): Promise<void> {
   const plans = await pool.query('SELECT count(*)::int AS n FROM plans');
   if ((plans.rows[0]?.n ?? 0) === 0) {
     await pool.query(
-      `INSERT INTO plans (name, price_cop, max_staff, max_branches, max_services, sort_order, features)
+      `INSERT INTO plans (name, price_cop, max_staff, max_branches, max_services, sort_order, features,
+                          description, discount_quarterly_pct, discount_semiannual_pct)
        VALUES
-         ('Básico',    49000,  3, 1, 20, 1, '{"waitlist": true, "reviews": true, "loyalty": true}'::jsonb),
-         ('Pro',       99000, 15, 5, 100, 2, '{"waitlist": true, "reviews": true, "loyalty": true, "online_payment": true}'::jsonb)`,
+         ('Básico', 49000, 3, 1, 20, 1,
+          '{"waitlist": true, "reviews": true, "loyalty": true, "reminders": true, "staff_photos": true,
+            "online_payment": false, "reports": false, "featured": false}'::jsonb,
+          'Para negocios que empiezan a recibir turnos en línea.', 5, 10),
+         ('Pro', 99000, 15, 5, 100, 2,
+          '{"waitlist": true, "reviews": true, "loyalty": true, "reminders": true, "staff_photos": true,
+            "online_payment": true, "reports": true, "featured": true}'::jsonb,
+          'Para equipos y varias sedes, con pagos en línea.', 10, 15)`,
     );
     // eslint-disable-next-line no-console
     console.log('Planes por defecto creados: Básico, Pro');

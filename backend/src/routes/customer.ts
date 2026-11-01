@@ -50,8 +50,13 @@ export default async function customerRoutes(app: FastifyInstance): Promise<void
     const { rows } = await query(
       `SELECT a.id, a.starts_at AS "startsAt", a.ends_at AS "endsAt", a.status,
               s.name AS "serviceName", u.full_name AS "staffName",
-              t.name AS "businessName", t.slug AS "businessSlug"
+              t.name AS "businessName", t.slug AS "businessSlug",
+              a.payment_status AS "paymentStatus", s.price_cop AS "priceCop",
+              (tps.enabled AND tps.wompi_public_key IS NOT NULL AND tps.wompi_integrity_enc IS NOT NULL
+               AND a.status IN ('booked','confirmed') AND a.payment_status <> 'paid' AND s.price_cop > 0
+               AND a.starts_at > now()) AS "canPay"
        FROM appointments a
+       LEFT JOIN tenant_payment_settings tps ON tps.tenant_id = a.tenant_id
        JOIN tenants t ON t.id=a.tenant_id
        JOIN services s ON s.id=a.service_id
        JOIN staff_profiles sp ON sp.id=a.staff_id

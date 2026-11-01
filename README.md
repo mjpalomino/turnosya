@@ -23,6 +23,10 @@ SaaS multi-inquilino de gestión de **citas y turnos**. Cada negocio (barbería,
 - Luego **2 planes** que el superadmin gestiona (precio, límites).
 - Cobro **manual** y **automático** (Wompi).
 
+## Novedades v4 (módulo comercial)
+
+Ver `CAMBIOS_COMERCIAL_v4.md`: panel de suscripciones y pagos del superadmin, planes con funcionalidades y límites, ciclos mensual/trimestral/semestral con descuento, códigos de referido, foto de empleados, contacto de la plataforma y del micrositio, y Wompi configurable desde el panel (plataforma) y por negocio (pagos de citas). Inventario comercial en `FUNCIONALIDADES_COMERCIALES.md`.
+
 ## Novedades v3 (comunidad de negocios)
 
 Ver `CAMBIOS_COMUNIDAD_v3.md`: directorio público con búsqueda por categoría/ciudad/GPS, cuentas de cliente globales, reserva con login, autogestión del negocio (logo cargado, colores, link personalizado, QR), marca de plataforma editable por el superadmin y botón de instalación PWA.

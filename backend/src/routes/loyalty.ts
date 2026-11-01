@@ -26,6 +26,7 @@ import { z } from 'zod';
 import { query, withTransaction } from '../db/pool.ts';
 import { parseOr400 } from '../lib/validation.ts';
 import { randomToken } from '../lib/token.ts';
+import { getEntitlements } from '../lib/plan-features.ts';
 
 const settingsSchema = z.object({
   enabled: z.boolean(),
@@ -61,6 +62,9 @@ export default async function loyaltyRoutes(app: FastifyInstance): Promise<void>
   app.put('/settings', owner, async (req, reply) => {
     const body = parseOr400(settingsSchema, req.body, reply);
     if (!body) return;
+    if (body.enabled && !(await getEntitlements(req.user.tenantId!)).features.loyalty) {
+      return reply.code(403).send({ error: 'Tu plan no incluye fidelización. Cambia de plan para activarla.', code: 'PLAN_FEATURE' });
+    }
     await query(
       `UPDATE loyalty_settings
          SET enabled=$1, stickers_for_reward=$2, reward_service_id=$3,
@@ -86,6 +90,9 @@ export default async function loyaltyRoutes(app: FastifyInstance): Promise<void>
     );
     const staffId = staffRows[0]?.id;
     if (!staffId) return reply.code(404).send({ error: 'Perfil de empleado no encontrado' });
+    if (!(await getEntitlements(req.user.tenantId!)).features.loyalty) {
+      return reply.code(403).send({ error: 'El plan del negocio no incluye fidelización', code: 'PLAN_FEATURE' });
+    }
 
     const enabled = await query<{ enabled: boolean }>(
       'SELECT enabled FROM loyalty_settings WHERE tenant_id=$1',

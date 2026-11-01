@@ -12,6 +12,8 @@ import { query, withTransaction } from '../db/pool.ts';
 import { hashPassword, verifyPassword } from '../lib/password.ts';
 import { isReservedSlug, parseOr400, slugify } from '../lib/validation.ts';
 import type { AuthUser } from '../types/auth.ts';
+import { newReferralCode } from '../lib/pricing.ts';
+import { attachReferral, checkReferralCode } from '../lib/subscription-billing.ts';
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -26,6 +28,7 @@ const registerSchema = z.object({
   phone: z.string().max(30).optional(),
   categoryId: z.string().uuid().optional(),
   city: z.string().trim().max(80).optional(),
+  referralCode: z.string().trim().max(20).optional(),
 });
 
 const customerSchema = z.object({
@@ -109,6 +112,13 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     const dup = await query('SELECT 1 FROM users WHERE lower(email) = lower($1)', [body.email]);
     if (dup.rowCount) return reply.code(409).send({ error: 'Ese correo ya está registrado' });
 
+    // Código de referido (opcional): si no es válido se informa y no se crea la cuenta.
+    let referral: Awaited<ReturnType<typeof checkReferralCode>> | null = null;
+    if (body.referralCode) {
+      referral = await checkReferralCode(body.referralCode);
+      if (!referral.ok) return reply.code(400).send({ error: referral.error });
+    }
+
     const hash = await hashPassword(body.password);
 
     const result = await withTransaction(async (client) => {
@@ -128,10 +138,13 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
 
       // Trial de 2 meses
       await client.query(
-        `INSERT INTO subscriptions (tenant_id, status, trial_ends_at, current_period_end)
-         VALUES ($1, 'trial', now() + interval '2 months', now() + interval '2 months')`,
-        [tenantId],
+        `INSERT INTO subscriptions (tenant_id, status, trial_ends_at, current_period_end, referral_code)
+         VALUES ($1, 'trial', now() + interval '2 months', now() + interval '2 months', $2)`,
+        [tenantId, newReferralCode()],
       );
+      if (referral?.ok && body.referralCode) {
+        await attachReferral(client, tenantId, body.referralCode, referral);
+      }
 
       // Sede inicial
       const branch = await client.query<{ id: string }>(

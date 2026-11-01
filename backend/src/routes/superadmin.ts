@@ -11,6 +11,13 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { query } from '../db/pool.ts';
 import { hexColorSchema, imageUrlSchema, parseOr400 } from '../lib/validation.ts';
+import { sanitizeFeatures } from '../lib/plan-features.ts';
+
+const PLAN_COLUMNS = `id, name, description, price_cop AS "priceCop", max_staff AS "maxStaff",
+              max_branches AS "maxBranches", max_services AS "maxServices",
+              features, is_active AS "isActive", sort_order AS "sortOrder",
+              discount_quarterly_pct::float AS "discountQuarterlyPct",
+              discount_semiannual_pct::float AS "discountSemiannualPct"`;
 
 const planSchema = z.object({
   name: z.string().min(1).max(60),
@@ -21,6 +28,9 @@ const planSchema = z.object({
   features: z.record(z.string(), z.unknown()).default({}),
   isActive: z.boolean().default(true),
   sortOrder: z.number().int().default(0),
+  description: z.preprocess((v) => (typeof v === 'string' && !v.trim() ? null : v), z.string().trim().max(300).nullable().optional()),
+  discountQuarterlyPct: z.number().min(0).max(90).default(0),
+  discountSemiannualPct: z.number().min(0).max(90).default(0),
 });
 
 const statusSchema = z.object({ status: z.enum(['active', 'suspended']) });
@@ -29,6 +39,7 @@ const subSchema = z.object({
   planId: z.string().uuid().nullable().optional(),
   status: z.enum(['trial', 'active', 'past_due', 'cancelled']),
   currentPeriodEnd: z.string().datetime().nullable().optional(),
+  billingCycleMonths: z.union([z.literal(1), z.literal(3), z.literal(6)]).optional(),
 });
 
 const brandingSchema = z.object({
@@ -44,12 +55,9 @@ export default async function superadminRoutes(app: FastifyInstance): Promise<vo
 
   // --- Planes ---
   app.get('/plans', sa, async () => {
-    const { rows } = await query(
-      `SELECT id, name, price_cop AS "priceCop", max_staff AS "maxStaff",
-              max_branches AS "maxBranches", max_services AS "maxServices",
-              features, is_active AS "isActive", sort_order AS "sortOrder"
-       FROM plans ORDER BY sort_order, name`,
-    );
+    const { rows } = await query(`SELECT ${PLAN_COLUMNS},
+              (SELECT count(*) FROM subscriptions s WHERE s.plan_id = plans.id AND s.status IN ('active','past_due'))::int AS "subscribers"
+       FROM plans ORDER BY sort_order, name`);
     return rows;
   });
 
@@ -57,9 +65,11 @@ export default async function superadminRoutes(app: FastifyInstance): Promise<vo
     const b = parseOr400(planSchema, req.body, reply);
     if (!b) return;
     const { rows } = await query(
-      `INSERT INTO plans (name, price_cop, max_staff, max_branches, max_services, features, is_active, sort_order)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-      [b.name, b.priceCop, b.maxStaff, b.maxBranches, b.maxServices, JSON.stringify(b.features), b.isActive, b.sortOrder],
+      `INSERT INTO plans (name, price_cop, max_staff, max_branches, max_services, features, is_active, sort_order,
+                          description, discount_quarterly_pct, discount_semiannual_pct)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+      [b.name, b.priceCop, b.maxStaff, b.maxBranches, b.maxServices, JSON.stringify(sanitizeFeatures(b.features)),
+       b.isActive, b.sortOrder, b.description ?? null, b.discountQuarterlyPct, b.discountSemiannualPct],
     );
     return reply.code(201).send({ id: rows[0]!.id });
   });
@@ -70,8 +80,10 @@ export default async function superadminRoutes(app: FastifyInstance): Promise<vo
     const id = (req.params as { id: string }).id;
     const { rowCount } = await query(
       `UPDATE plans SET name=$1, price_cop=$2, max_staff=$3, max_branches=$4,
-              max_services=$5, features=$6, is_active=$7, sort_order=$8 WHERE id=$9`,
-      [b.name, b.priceCop, b.maxStaff, b.maxBranches, b.maxServices, JSON.stringify(b.features), b.isActive, b.sortOrder, id],
+              max_services=$5, features=$6, is_active=$7, sort_order=$8,
+              description=$9, discount_quarterly_pct=$10, discount_semiannual_pct=$11 WHERE id=$12`,
+      [b.name, b.priceCop, b.maxStaff, b.maxBranches, b.maxServices, JSON.stringify(sanitizeFeatures(b.features)),
+       b.isActive, b.sortOrder, b.description ?? null, b.discountQuarterlyPct, b.discountSemiannualPct, id],
     );
     if (!rowCount) return reply.code(404).send({ error: 'No encontrado' });
     return { ok: true };
@@ -107,9 +119,10 @@ export default async function superadminRoutes(app: FastifyInstance): Promise<vo
     if (!b) return;
     const id = (req.params as { id: string }).id;
     const { rowCount } = await query(
-      `UPDATE subscriptions SET plan_id=$1, status=$2, current_period_end=$3, updated_at=now()
+      `UPDATE subscriptions SET plan_id=$1, status=$2, current_period_end=$3,
+              billing_cycle_months=COALESCE($5, billing_cycle_months), updated_at=now()
        WHERE tenant_id=$4`,
-      [b.planId ?? null, b.status, b.currentPeriodEnd ?? null, id],
+      [b.planId ?? null, b.status, b.currentPeriodEnd ?? null, id, b.billingCycleMonths ?? null],
     );
     if (!rowCount) return reply.code(404).send({ error: 'No encontrado' });
     return { ok: true };

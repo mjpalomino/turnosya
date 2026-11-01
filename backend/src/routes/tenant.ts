@@ -15,6 +15,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { query } from '../db/pool.ts';
 import { hexColorSchema, imageUrlSchema, isReservedSlug, parseOr400, slugSchema } from '../lib/validation.ts';
+import { getEntitlements } from '../lib/plan-features.ts';
 
 const emptyToNull = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? null : v);
 
@@ -33,6 +34,9 @@ const brandingSchema = z.object({
   about: z.preprocess(emptyToNull, z.string().max(1000).nullable().optional()),
   instagram: z.preprocess(emptyToNull, z.string().max(100).nullable().optional()),
   website: z.preprocess(emptyToNull, z.string().max(200).regex(/^https?:\/\//i, 'Debe iniciar con http:// o https://').nullable().optional()),
+  facebook: z.preprocess(emptyToNull, z.string().max(200).nullable().optional()),
+  tiktok: z.preprocess(emptyToNull, z.string().max(100).nullable().optional()),
+  openingHours: z.preprocess(emptyToNull, z.string().max(300).nullable().optional()),
 });
 
 const profileSchema = z.object({
@@ -134,7 +138,7 @@ export default async function tenantRoutes(app: FastifyInstance): Promise<void> 
     const { rows } = await query(
       `SELECT logo_url AS "logoUrl", cover_url AS "coverUrl", primary_color AS "primaryColor",
               secondary_color AS "secondaryColor", phone, whatsapp_number AS "whatsappNumber",
-              email, address, about, instagram, website
+              email, address, about, instagram, website, facebook, tiktok, opening_hours AS "openingHours"
        FROM tenant_branding WHERE tenant_id=$1`,
       [req.user.tenantId],
     );
@@ -146,19 +150,25 @@ export default async function tenantRoutes(app: FastifyInstance): Promise<void> 
     if (!b) return;
     await query(
       `INSERT INTO tenant_branding (tenant_id, logo_url, cover_url, primary_color, secondary_color,
-              phone, whatsapp_number, email, address, about, instagram, website, updated_at)
-       VALUES ($12,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, now())
+              phone, whatsapp_number, email, address, about, instagram, website,
+              facebook, tiktok, opening_hours, updated_at)
+       VALUES ($12,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$13,$14,$15, now())
        ON CONFLICT (tenant_id) DO UPDATE SET logo_url=EXCLUDED.logo_url, cover_url=EXCLUDED.cover_url,
               primary_color=EXCLUDED.primary_color, secondary_color=EXCLUDED.secondary_color,
               phone=EXCLUDED.phone, whatsapp_number=EXCLUDED.whatsapp_number, email=EXCLUDED.email,
               address=EXCLUDED.address, about=EXCLUDED.about, instagram=EXCLUDED.instagram,
-              website=EXCLUDED.website, updated_at=now()`,
+              website=EXCLUDED.website, facebook=EXCLUDED.facebook, tiktok=EXCLUDED.tiktok,
+              opening_hours=EXCLUDED.opening_hours, updated_at=now()`,
       [b.logoUrl ?? null, b.coverUrl ?? null, b.primaryColor, b.secondaryColor, b.phone ?? null,
        b.whatsappNumber ?? null, b.email ?? null, b.address ?? null, b.about ?? null,
-       b.instagram ?? null, b.website ?? null, req.user.tenantId],
+       b.instagram ?? null, b.website ?? null, req.user.tenantId,
+       b.facebook ?? null, b.tiktok ?? null, b.openingHours ?? null],
     );
     return { ok: true };
   });
+
+  // Funcionalidades y límites del plan actual (para mostrar/ocultar opciones en el panel).
+  app.get('/entitlements', owner, async (req) => getEntitlements(req.user.tenantId!));
 
   app.get('/settings', owner, async (req) => {
     const { rows } = await query(
@@ -195,6 +205,13 @@ export default async function tenantRoutes(app: FastifyInstance): Promise<void> 
   app.post('/branches', owner, async (req, reply) => {
     const b = parseOr400(branchSchema, req.body, reply);
     if (!b) return;
+    const ent = await getEntitlements(req.user.tenantId!);
+    if (ent.limits.maxBranches !== null) {
+      const c = await query<{ n: number }>('SELECT count(*)::int AS n FROM branches WHERE tenant_id=$1 AND is_active', [req.user.tenantId]);
+      if ((c.rows[0]?.n ?? 0) + 1 > ent.limits.maxBranches) {
+        return reply.code(403).send({ error: `Tu plan permite hasta ${ent.limits.maxBranches} sede(s).`, code: 'PLAN_LIMIT' });
+      }
+    }
     const { rows } = await query(
       `INSERT INTO branches (tenant_id, name, address, phone) VALUES ($1,$2,$3,$4) RETURNING id`,
       [req.user.tenantId, b.name, b.address ?? null, b.phone ?? null],

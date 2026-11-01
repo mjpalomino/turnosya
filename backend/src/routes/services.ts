@@ -9,6 +9,18 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { query } from '../db/pool.ts';
 import { parseOr400 } from '../lib/validation.ts';
+import { getEntitlements } from '../lib/plan-features.ts';
+
+async function serviceLimitError(tenantId: string): Promise<string | null> {
+  const ent = await getEntitlements(tenantId);
+  const max = ent.limits.maxServices;
+  if (max === null) return null;
+  const { rows } = await query<{ n: number }>(
+    'SELECT count(*)::int AS n FROM services WHERE tenant_id=$1 AND is_active', [tenantId]);
+  return (rows[0]?.n ?? 0) + 1 > max
+    ? `Tu plan permite hasta ${max} servicios activos. Cambia de plan para agregar más.`
+    : null;
+}
 
 const serviceSchema = z.object({
   name: z.string().min(1).max(100),
@@ -35,6 +47,10 @@ export default async function serviceRoutes(app: FastifyInstance): Promise<void>
   app.post('/', owner, async (req, reply) => {
     const body = parseOr400(serviceSchema, req.body, reply);
     if (!body) return;
+    if (body.isActive) {
+      const limit = await serviceLimitError(req.user.tenantId!);
+      if (limit) return reply.code(403).send({ error: limit, code: 'PLAN_LIMIT' });
+    }
     const { rows } = await query(
       `INSERT INTO services (tenant_id, name, description, duration_minutes, price_cop, is_active)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
@@ -47,6 +63,13 @@ export default async function serviceRoutes(app: FastifyInstance): Promise<void>
     const body = parseOr400(serviceSchema, req.body, reply);
     if (!body) return;
     const id = (req.params as { id: string }).id;
+    if (body.isActive) {
+      const was = await query<{ is_active: boolean }>('SELECT is_active FROM services WHERE id=$1 AND tenant_id=$2', [id, req.user.tenantId]);
+      if (was.rows[0] && !was.rows[0].is_active) {
+        const limit = await serviceLimitError(req.user.tenantId!);
+        if (limit) return reply.code(403).send({ error: limit, code: 'PLAN_LIMIT' });
+      }
+    }
     const { rowCount } = await query(
       `UPDATE services SET name=$1, description=$2, duration_minutes=$3, price_cop=$4, is_active=$5
        WHERE id=$6 AND tenant_id=$7`,

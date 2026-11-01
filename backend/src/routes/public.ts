@@ -13,6 +13,8 @@ import { query, withTransaction } from '../db/pool.ts';
 import { parseOr400 } from '../lib/validation.ts';
 import { notifyAppointment } from '../lib/notify.ts';
 import { zonedToUtc } from '../lib/time.ts';
+import { getEntitlements } from '../lib/plan-features.ts';
+import { getTenantWompi, tenantWompiReady } from '../lib/wompi-config.ts';
 
 const availabilitySchema = z.object({
   serviceId: z.string().uuid(),
@@ -47,7 +49,8 @@ export default async function publicRoutes(app: FastifyInstance): Promise<void> 
     const branding = await query(
       `SELECT logo_url AS "logoUrl", cover_url AS "coverUrl", primary_color AS "primaryColor",
               secondary_color AS "secondaryColor", phone, whatsapp_number AS "whatsappNumber",
-              email, address, about, instagram, website
+              email, address, about, instagram, website, facebook, tiktok,
+              opening_hours AS "openingHours"
        FROM tenant_branding WHERE tenant_id=$1`,
       [tenant.id],
     );
@@ -71,12 +74,16 @@ export default async function publicRoutes(app: FastifyInstance): Promise<void> 
       [tenant.id],
     );
     // Nombre visible de quienes atienden (para elegir profesional).
+    const ent = await getEntitlements(tenant.id);
     const staff = await query(
-      `SELECT sp.id, u.full_name AS "fullName", sp.title
+      `SELECT sp.id, u.full_name AS "fullName", sp.title,
+              CASE WHEN $2 THEN sp.photo_url ELSE NULL END AS "photoUrl"
          FROM staff_profiles sp JOIN users u ON u.id = sp.user_id
         WHERE sp.tenant_id=$1 AND sp.is_active=true ORDER BY u.full_name`,
-      [tenant.id],
+      [tenant.id, ent.features.staff_photos],
     );
+    const wompi = await getTenantWompi(tenant.id);
+    const payOnline = ent.features.online_payment && tenantWompiReady(wompi);
     const p = profile.rows[0]!;
     return {
       name: p.name,
@@ -90,6 +97,9 @@ export default async function publicRoutes(app: FastifyInstance): Promise<void> 
       branding: branding.rows[0] ?? null,
       services: services.rows,
       staff: staff.rows,
+      onlinePayment: payOnline
+        ? { enabled: true, chargeMode: wompi!.chargeMode, depositPct: wompi!.depositPct }
+        : { enabled: false },
     };
   });
 
