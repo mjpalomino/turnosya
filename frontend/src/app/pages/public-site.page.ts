@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { goToWompi } from '../core/wompi';
+import { NequiPayComponent } from '../ui/nequi-pay.component';
 import { AuthService } from '../core/auth.service';
 import { ThemeService } from '../core/theme.service';
 import { BrandLockupComponent } from '../ui/brand-lockup.component';
@@ -22,7 +23,7 @@ const PENDING_KEY = 'turnosya_pending_booking';
 @Component({
   selector: 'app-public-site',
   standalone: true,
-  imports: [FormsModule, DatePipe, DecimalPipe, RouterLink, UiIconComponent, BrandLockupComponent, InstallButtonComponent],
+  imports: [FormsModule, DatePipe, DecimalPipe, RouterLink, UiIconComponent, BrandLockupComponent, InstallButtonComponent, NequiPayComponent],
   template: `
     @if (site(); as s) {
       <a class="skip-link" href="#reservar">Saltar a la reserva</a>
@@ -134,8 +135,19 @@ const PENDING_KEY = 'turnosya_pending_booking';
                       @if (s.onlinePayment?.enabled && lastApptId() && (selectedService()?.priceCop ?? 0) > 0) {
                         <div class="card form-stack" style="gap:.6rem">
                           <strong>{{ s.onlinePayment!.chargeMode === 'deposit' ? 'Asegura tu turno con un anticipo del ' + s.onlinePayment!.depositPct + '%' : 'Paga tu turno en línea' }}</strong>
-                          <button type="button" class="btn btn-primary" [disabled]="paying()" [attr.aria-busy]="paying()" (click)="payOnline()">@if (paying()) { <span class="spinner"></span> Abriendo Wompi… } @else { <app-ui-icon name="credit-card" /> Pagar ahora con Wompi }</button>
-                          <small class="muted">También puedes pagar después desde “Mis citas”.</small>
+                          @if (nequiSent()) {
+                            <div class="booking-done" role="status"><app-ui-icon name="check-circle" /><div><strong>Comprobante enviado</strong><small>El negocio confirmará tu pago. Lo verás en “Mis citas”.</small></div></div>
+                          } @else {
+                            <div class="form-actions-row">
+                              @if (s.onlinePayment!.wompi) { <button type="button" class="btn btn-primary" [disabled]="paying()" [attr.aria-busy]="paying()" (click)="payOnline()">@if (paying()) { <span class="spinner"></span> Abriendo Wompi… } @else { <app-ui-icon name="credit-card" /> Pagar con Wompi }</button> }
+                              @if (s.onlinePayment!.nequi) { <button type="button" class="btn btn-secondary" [attr.aria-expanded]="showNequi()" (click)="showNequi.set(!showNequi())"><span class="nequi-badge">Nequi</span> Pagar con Nequi</button> }
+                            </div>
+                            @if (showNequi() && s.onlinePayment!.nequi; as nq) {
+                              <app-nequi-pay [qrUrl]="nq.qrUrl" [number]="nq.number" [holder]="nq.holder" [amountCop]="chargeAmount()" reviewer="el negocio"
+                                             [busy]="nequiBusy()" [errorMsg]="nequiError()" (submitProof)="sendNequi($event)" />
+                            }
+                            <small class="muted">También puedes pagar después desde “Mis citas”.</small>
+                          }
                         </div>
                       }
                       <div class="form-actions-row"><a class="btn btn-primary" routerLink="/mis-citas">Ver mis citas</a><button class="btn btn-secondary" (click)="resetBooking()">Pedir otro turno</button></div>
@@ -262,6 +274,28 @@ export class PublicSitePage implements OnInit, OnDestroy {
 
   lastApptId = signal('');
   paying = signal(false);
+  showNequi = signal(false);
+  nequiBusy = signal(false);
+  nequiError = signal('');
+  nequiSent = signal(false);
+
+  /** Valor a pagar según el modo del negocio (completo o anticipo). */
+  chargeAmount(): number {
+    const price = this.selectedService()?.priceCop ?? 0;
+    const op = this.site()?.onlinePayment;
+    if (op?.chargeMode === 'deposit') return Math.max(1, Math.round((price * (op.depositPct ?? 30)) / 100));
+    return price;
+  }
+
+  sendNequi(e: { proofDataUrl: string; note: string }): void {
+    const id = this.lastApptId();
+    if (!id) return;
+    this.nequiBusy.set(true); this.nequiError.set('');
+    this.api.post(`/payments/appointments/${id}/nequi`, { proofDataUrl: e.proofDataUrl, note: e.note || null }).subscribe({
+      next: () => { this.nequiBusy.set(false); this.nequiSent.set(true); this.showNequi.set(false); },
+      error: (err) => { this.nequiBusy.set(false); this.nequiError.set(err?.error?.error ?? 'No se pudo enviar el comprobante'); },
+    });
+  }
 
   staffPhoto(id: string): string | null { return this.site()?.staff?.find((x) => x.id === id)?.photoUrl ?? null; }
   staffTitle(id: string): string | null { return this.site()?.staff?.find((x) => x.id === id)?.title ?? null; }
@@ -376,6 +410,9 @@ export class PublicSitePage implements OnInit, OnDestroy {
     this.done.set(false);
     this.lastApptId.set('');
     this.paying.set(false);
+    this.showNequi.set(false);
+    this.nequiSent.set(false);
+    this.nequiError.set('');
     this.chosenSlot = '';
     this.chosenStaff = '';
     this.loadAvailability();

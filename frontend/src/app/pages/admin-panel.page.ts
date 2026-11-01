@@ -12,6 +12,7 @@ import { AdminPlansComponent } from '../admin/admin-plans.component';
 import { AdminReferralsComponent } from '../admin/admin-referrals.component';
 import { AdminContactComponent } from '../admin/admin-contact.component';
 import { AdminWompiComponent } from '../admin/admin-wompi.component';
+import { NequiSettingsComponent } from '../ui/nequi-settings.component';
 import type { TenantRow } from '../core/models';
 
 interface Metrics { tenants: number; active: number; appts: number; subscriptions: { status: string; n: number }[]; }
@@ -21,7 +22,7 @@ interface Metrics { tenants: number; active: number; appts: number; subscription
   selector: 'app-admin-panel',
   standalone: true,
   imports: [FormsModule, DatePipe, UiIconComponent, BrandLockupComponent, RouterLink, PlatformBrandComponent,
-    AdminBillingComponent, AdminPlansComponent, AdminReferralsComponent, AdminContactComponent, AdminWompiComponent],
+    AdminBillingComponent, AdminPlansComponent, AdminReferralsComponent, AdminContactComponent, AdminWompiComponent, NequiSettingsComponent],
   template: `
     <a class="skip-link" href="#main-content">Saltar al contenido</a>
     <header class="topbar"><div class="container topbar-inner">
@@ -86,8 +87,9 @@ interface Metrics { tenants: number; active: number; appts: number; subscription
         </section>
       }
       @if (tab()==='wompi') {
-        <section class="section-stack" aria-labelledby="wompi-title"><div class="section-heading"><div><h2 id="wompi-title">Pasarela de pagos</h2><p>Configuración de Wompi para cobrar las suscripciones.</p></div></div>
+        <section class="section-stack" aria-labelledby="wompi-title"><div class="section-heading"><div><h2 id="wompi-title">Pasarela de pagos</h2><p>Wompi y Nequi para cobrar las suscripciones.</p></div></div>
           <app-admin-wompi (notify)="notify($event.message, $event.type)" />
+          <app-nequi-settings endpoint="/admin/settings/nequi" title="Nequi de la plataforma" hint="Los negocios verán este QR y número para pagar su suscripción; tú apruebas cada comprobante en Suscripciones y pagos." (notify)="notify($event.message, $event.type)" />
         </section>
       }
       @if (tab()==='brand') {

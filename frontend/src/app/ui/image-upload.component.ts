@@ -43,7 +43,7 @@ export class ImageUploadComponent {
   private api = inject(ApiService);
   private static seq = 0;
 
-  @Input({ required: true }) kind: 'logo' | 'cover' | 'platform_logo' | 'staff_photo' = 'logo';
+  @Input({ required: true }) kind: 'logo' | 'cover' | 'platform_logo' | 'staff_photo' | 'nequi_qr' = 'logo';
   @Input() value: string | null | undefined = null;
   @Input() label = 'Logo';
   @Input() hint = 'PNG, JPG o WebP. Se ajusta automáticamente.';

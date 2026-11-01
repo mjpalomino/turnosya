@@ -5,6 +5,9 @@ import { ApiService } from '../core/api.service';
 import { UiIconComponent } from '../ui/icon.component';
 import { CYCLE_OPTIONS, type BillingCycle, type FeatureDef, type Plan, type PriceQuote, type WompiCheckout } from '../core/models';
 import { cycleLabel, goToWompi, paymentBadge, paymentStatusLabel, subStatusLabel } from '../core/wompi';
+import { NequiPayComponent } from '../ui/nequi-pay.component';
+
+interface NequiInfo { enabled: boolean; number?: string; holder?: string | null; qrUrl?: string | null; }
 
 interface SubState {
   status: string; trialEndsAt: string | null; currentPeriodEnd: string | null;
@@ -15,7 +18,7 @@ interface SubState {
 }
 interface Payment {
   reference: string; amountInCents: number; status: string; periodMonths: number; createdAt: string;
-  discountInCents: number; discountDetail: { label: string }[]; provider: string; planName: string | null;
+  discountInCents: number; discountDetail: { label: string }[]; provider: string; planName: string | null; reviewNote?: string | null;
 }
 interface ReferralInfo {
   program: { enabled: boolean; referralDiscountPct: number; referrerRewardPct: number };
@@ -39,7 +42,7 @@ declare global {
 @Component({
   selector: 'app-owner-subscription',
   standalone: true,
-  imports: [FormsModule, DatePipe, DecimalPipe, UiIconComponent],
+  imports: [FormsModule, DatePipe, DecimalPipe, UiIconComponent, NequiPayComponent],
   template: `
     @if (sub(); as sv) {
       <div class="management-grid">
@@ -91,10 +94,18 @@ declare global {
             @for (f of catalog(); track f.key) { @if (p.features[f.key] === true) { <li class="on"><app-ui-icon name="check" /> {{ f.label }}</li> } }
           </ul>
           <button type="button" class="btn btn-primary" [disabled]="paying()" [attr.aria-busy]="paying() === p.id" (click)="pay(p.id)">@if (paying() === p.id) { <span class="spinner"></span> Redirigiendo… } @else { Pagar con Wompi <app-ui-icon name="arrow-right" /> }</button>
+          @if (nequi()?.enabled) { <button type="button" class="btn btn-secondary" [attr.aria-expanded]="nequiPlan() === p.id" (click)="toggleNequi(p.id)"><span class="nequi-badge">Nequi</span> Pagar con Nequi</button> }
         </div>
       } @empty { <div class="empty-state"><h3>Sin planes disponibles</h3><p>Vuelve a consultar más adelante.</p></div> }
     </div>
     @if (payError()) { <p class="error" role="alert">{{ payError() }}</p> }
+    @if (nequiPlan(); as np) { @if (nequi(); as n) { @if (quotes()[np]; as q) {
+      <div class="form-panel" style="margin-top:1rem" id="nequi-pay-panel">
+        <app-nequi-pay [qrUrl]="n.qrUrl ?? null" [number]="n.number ?? ''" [holder]="n.holder ?? null" [amountCop]="q.totalCop"
+                       reviewer="la plataforma" [busy]="nequiBusy()" [errorMsg]="nequiError()" (submitProof)="sendNequi(np, $event)" />
+        <p class="muted" style="margin-top:.5rem">Plan {{ q.planName }} · {{ cycle(q.months).toLowerCase() }}. Para cambiar plan o ciclo, elígelo arriba.</p>
+      </div>
+    } } }
 
     <!-- Cobro automático -->
     @if (sub(); as sv) { @if (!sv.autoRenew) {
@@ -148,7 +159,7 @@ declare global {
       @for (pay of payments(); track pay.reference) {
         <div class="card record-card">
           <div class="record-main"><strong class="record-title">{{ pay.amountInCents / 100 | number }} COP · {{ pay.planName || 'Plan' }} {{ cycle(pay.periodMonths).toLowerCase() }}</strong>
-            <span class="record-meta">{{ pay.createdAt | date:'d MMM y, HH:mm' }}@if (pay.discountInCents) { · ahorraste {{ pay.discountInCents / 100 | number }} COP } · {{ pay.provider === 'manual' ? 'Pago registrado por soporte' : 'Wompi' }}</span></div>
+            <span class="record-meta">{{ pay.createdAt | date:'d MMM y, HH:mm' }}@if (pay.discountInCents) { · ahorraste {{ pay.discountInCents / 100 | number }} COP } · {{ pay.provider === 'manual' ? 'Pago registrado por soporte' : pay.provider === 'nequi' ? 'Nequi' : 'Wompi' }}@if (pay.provider === 'nequi' && pay.status === 'pending') { · en revisión }@if (pay.reviewNote && pay.status !== 'approved') { · {{ pay.reviewNote }} }</span></div>
           <span class="badge" [class]="badge(pay.status)">{{ statusLabel(pay.status) }}</span>
         </div>
       } @empty { <div class="empty-state"><span class="empty-icon"><app-ui-icon name="credit-card" /></span><h3>Aún no hay pagos</h3><p>Los pagos aparecerán aquí cuando los realices.</p></div> }
@@ -166,6 +177,10 @@ export class OwnerSubscriptionComponent implements OnInit {
   quotes = signal<Record<string, PriceQuote>>({});
   payments = signal<Payment[]>([]);
   ref = signal<ReferralInfo | null>(null);
+  nequi = signal<NequiInfo | null>(null);
+  nequiPlan = signal<string | null>(null);
+  nequiBusy = signal(false);
+  nequiError = signal('');
   months = signal<BillingCycle>(1);
   paying = signal<string | false>(false);
   payError = signal('');
@@ -184,6 +199,21 @@ export class OwnerSubscriptionComponent implements OnInit {
     this.api.get<Plan[]>('/plans').subscribe({ next: (p) => { this.plans.set(p); this.loadQuotes(); } });
     this.api.get<Payment[]>('/billing/payments').subscribe({ next: (p) => this.payments.set(p) });
     this.api.get<ReferralInfo>('/billing/referrals').subscribe({ next: (r) => this.ref.set(r) });
+    this.api.get<NequiInfo>('/billing/nequi').subscribe({ next: (n) => this.nequi.set(n), error: () => this.nequi.set(null) });
+  }
+
+  toggleNequi(planId: string): void {
+    this.nequiError.set('');
+    this.nequiPlan.set(this.nequiPlan() === planId ? null : planId);
+    setTimeout(() => document.getElementById('nequi-pay-panel')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+  }
+
+  sendNequi(planId: string, e: { proofDataUrl: string; note: string }): void {
+    this.nequiBusy.set(true); this.nequiError.set('');
+    this.api.post<{ amountCop: number }>('/billing/nequi', { planId, months: this.months(), proofDataUrl: e.proofDataUrl, note: e.note || null }).subscribe({
+      next: () => { this.nequiBusy.set(false); this.nequiPlan.set(null); this.notify.emit({ message: 'Comprobante enviado. Tu pago queda en revisión; te activamos el plan al confirmarlo.', type: 'ok' }); this.load(); },
+      error: (err) => { this.nequiBusy.set(false); this.nequiError.set(err?.error?.error ?? 'No se pudo enviar el comprobante.'); },
+    });
   }
 
   setMonths(m: BillingCycle): void { this.months.set(m); this.loadQuotes(); }

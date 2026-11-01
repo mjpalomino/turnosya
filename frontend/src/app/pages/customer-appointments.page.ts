@@ -3,6 +3,7 @@ import { DatePipe } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { goToWompi } from '../core/wompi';
+import { NequiPayComponent } from '../ui/nequi-pay.component';
 import { AuthService } from '../core/auth.service';
 import { UiIconComponent } from '../ui/icon.component';
 import { BrandLockupComponent } from '../ui/brand-lockup.component';
@@ -12,7 +13,7 @@ import type { Appointment, LoyaltyCard, WompiCheckout } from '../core/models';
 @Component({
   selector: 'app-customer-appointments',
   standalone: true,
-  imports: [DatePipe, RouterLink, UiIconComponent, BrandLockupComponent],
+  imports: [DatePipe, RouterLink, UiIconComponent, BrandLockupComponent, NequiPayComponent],
   template: `
     <a class="skip-link" href="#main-content">Saltar al contenido</a>
     <header class="topbar"><div class="container topbar-inner"><a routerLink="/" class="topbar-brand" aria-label="Ir al inicio"><app-brand-lockup subtitle="Tus reservas" /></a><div class="topbar-actions"><span class="role-badge">Cliente</span><button class="btn btn-subtle btn-sm" (click)="logout()"><app-ui-icon name="logout" /> Salir</button></div></div></header>
@@ -42,9 +43,16 @@ import type { Appointment, LoyaltyCard, WompiCheckout } from '../core/models';
                 <div class="record-main">@if (a.businessName) { <a class="record-business" [routerLink]="['/', a.businessSlug]"><app-ui-icon name="store" /> {{ a.businessName }}</a> }<strong class="record-title">{{ a.serviceName }}</strong><span class="record-meta"><app-ui-icon name="calendar" /> {{ a.startsAt | date:'EEE d MMM, HH:mm' }}</span>@if (a.staffName) { <span class="record-meta">Con {{ a.staffName }}</span> }<span class="badge" [class]="badgeClass(a.status)">{{ label(a.status) }}</span></div>
                 <div class="data-pair">
                   @if (a.paymentStatus === 'paid') { <span class="badge badge-ok"><app-ui-icon name="check" /> Pagada</span> }
+                  @if (a.paymentStatus === 'pending' && a.nequiStatus === 'pending') { <span class="badge badge-warn">Pago Nequi en revisión</span> }
+                  @if (a.canPayNequi) { <button class="btn btn-secondary btn-sm" [attr.aria-expanded]="nequiFor() === a.id" (click)="nequiFor.set(nequiFor() === a.id ? '' : a.id)"><span class="nequi-badge">Nequi</span> Pagar con Nequi</button> }
                   @if (a.canPay) { <button class="btn btn-primary btn-sm" [disabled]="paying() === a.id" [attr.aria-busy]="paying() === a.id" (click)="pay(a)">@if (paying() === a.id) { <span class="spinner"></span> } @else { <app-ui-icon name="credit-card" /> } Pagar en línea</button> }
                   @if (a.status === 'booked' || a.status === 'confirmed') { <button class="btn btn-outline-danger btn-sm" (click)="cancel(a)">Cancelar cita</button> }
                 </div>
+                @if (a.nequiStatus === 'declined' && a.nequiReviewNote && a.paymentStatus === 'none') { <p class="error" role="alert">Tu pago por Nequi fue rechazado: {{ a.nequiReviewNote }}. Puedes enviar otro comprobante.</p> }
+                @if (nequiFor() === a.id && a.nequi; as nq) {
+                  <app-nequi-pay [qrUrl]="nq.qrUrl" [number]="nq.number" [holder]="nq.holder" [amountCop]="amountFor(a)" reviewer="el negocio"
+                                 [busy]="nequiBusy()" [errorMsg]="nequiError()" (submitProof)="sendNequi(a, $event)" />
+                }
               </div>
               @if (a.status === 'completed' && !reviewed().has(a.id)) {
                 <div class="review">
@@ -97,6 +105,22 @@ export class CustomerAppointmentsPage implements OnInit {
   }
 
   paying = signal('');
+  nequiFor = signal('');
+  nequiBusy = signal(false);
+  nequiError = signal('');
+
+  amountFor(a: Appointment): number {
+    const price = a.priceCop ?? 0;
+    return a.nequi?.chargeMode === 'deposit' ? Math.max(1, Math.round((price * a.nequi.depositPct) / 100)) : price;
+  }
+
+  sendNequi(a: Appointment, e: { proofDataUrl: string; note: string }): void {
+    this.nequiBusy.set(true); this.nequiError.set('');
+    this.api.post(`/payments/appointments/${a.id}/nequi`, { proofDataUrl: e.proofDataUrl, note: e.note || null }).subscribe({
+      next: () => { this.nequiBusy.set(false); this.nequiFor.set(''); this.notify('Comprobante enviado. El negocio confirmará tu pago.', 'ok'); this.api.get<Appointment[]>('/customer/appointments').subscribe({ next: (r) => this.appts.set(r) }); },
+      error: (err) => { this.nequiBusy.set(false); this.nequiError.set(err?.error?.error ?? 'No se pudo enviar el comprobante.'); },
+    });
+  }
   pay(a: Appointment): void {
     this.paying.set(a.id);
     this.api.post<WompiCheckout>(`/payments/appointments/${a.id}/checkout`, {}).subscribe({

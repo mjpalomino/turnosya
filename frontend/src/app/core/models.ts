@@ -54,7 +54,10 @@ export interface PublicSite {
   } | null;
   services: Service[];
   staff?: { id: string; fullName: string; title?: string | null; photoUrl?: string | null }[];
-  onlinePayment?: { enabled: boolean; chargeMode?: 'full' | 'deposit'; depositPct?: number };
+  onlinePayment?: {
+    enabled: boolean; wompi?: boolean; chargeMode?: 'full' | 'deposit'; depositPct?: number;
+    nequi?: { number: string; holder: string | null; qrUrl: string | null } | null;
+  };
 }
 
 /** Categoría (tipo de negocio) del directorio. */
@@ -118,6 +121,10 @@ export interface Appointment {
   paymentStatus?: 'none' | 'pending' | 'paid';
   priceCop?: number;
   canPay?: boolean;
+  canPayNequi?: boolean;
+  nequi?: { number: string; holder: string | null; qrUrl: string | null; chargeMode: 'full' | 'deposit'; depositPct: number } | null;
+  nequiStatus?: string | null;
+  nequiReviewNote?: string | null;
 }
 
 export interface LoyaltyCard {

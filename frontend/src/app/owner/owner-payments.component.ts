@@ -36,7 +36,7 @@ interface TenantWompi {
           <div class="field"><label for="tw-int">Secreto de integridad</label><input id="tw-int" class="input" type="password" [(ngModel)]="integ" [placeholder]="s.integritySecret ? 'Guardado ' + s.integritySecret + ' · escribe para cambiarlo' : env + '_integrity_…'" autocomplete="new-password" /></div>
           <div class="field"><label for="tw-ev">Secreto de eventos</label><input id="tw-ev" class="input" type="password" [(ngModel)]="events" [placeholder]="s.eventsSecret ? 'Guardado ' + s.eventsSecret + ' · escribe para cambiarlo' : env + '_events_…'" autocomplete="new-password" /><span class="input-hint">Necesario para que las citas se marquen como pagadas automáticamente.</span></div>
           <div class="card-divider"></div>
-          <div class="field"><span class="field-label">¿Cuánto cobrar al reservar?</span>
+          <div class="field"><span class="field-label">¿Cuánto cobrar al reservar? <small class="muted">(aplica a Wompi y a Nequi)</small></span>
             <div class="segmented" role="group" aria-label="Modo de cobro">
               <button type="button" [attr.aria-pressed]="mode === 'full'" (click)="mode = 'full'">Valor completo</button>
               <button type="button" [attr.aria-pressed]="mode === 'deposit'" (click)="mode = 'deposit'">Anticipo</button>

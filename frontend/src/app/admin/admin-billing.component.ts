@@ -3,13 +3,14 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../core/api.service';
 import { UiIconComponent } from '../ui/icon.component';
+import { ProofButtonComponent } from '../ui/proof-button.component';
 import { CYCLE_OPTIONS, type BillingCycle, type Plan } from '../core/models';
 import { cycleLabel, paymentBadge, paymentStatusLabel, subStatusLabel } from '../core/wompi';
 
 interface Summary {
   mrrCop: number; revenueMonthCop: number; revenue30dCop: number; discountsMonthCop: number;
   pendingPayments: number; failedPayments30d: number; renewalsNext7d: number; trialsEndingNext7d: number;
-  pastDue: number; autoRenew: number; referralsConverted: number;
+  pastDue: number; autoRenew: number; referralsConverted: number; nequiToReview: number;
   byStatus: { status: string; n: number }[]; byPlan: { plan: string; n: number }[];
   byCycle: { months: number; n: number }[]; monthly: { month: string; revenueCop: number; payments: number }[];
 }
@@ -24,6 +25,7 @@ interface PaymentRow {
   id: string; reference: string; status: string; provider: string; amountCop: number; baseCop: number;
   discountCop: number; discountDetail: { label: string; amountCop: number }[]; periodMonths: number;
   isRecurring: boolean; notes: string | null; createdAt: string; tenantName: string; planName: string | null;
+  hasProof: boolean; payerNote: string | null; reviewNote: string | null;
 }
 
 /**
@@ -33,9 +35,12 @@ interface PaymentRow {
 @Component({
   selector: 'app-admin-billing',
   standalone: true,
-  imports: [FormsModule, DatePipe, DecimalPipe, UiIconComponent],
+  imports: [FormsModule, DatePipe, DecimalPipe, UiIconComponent, ProofButtonComponent],
   template: `
     @if (summary(); as s) {
+      @if (s.nequiToReview > 0) {
+        <div class="welcome-banner" role="status"><app-ui-icon name="receipt" /><div><strong>{{ s.nequiToReview }} pago(s) por Nequi esperan tu revisión.</strong><p>Revisa el comprobante en la lista de pagos y apruébalo para renovar la suscripción.</p></div><button type="button" class="btn btn-secondary btn-sm" (click)="fStatus = 'pending'; reloadPayments(0)">Ver pendientes</button></div>
+      }
       <div class="metric-grid">
         <div class="card metric-card"><span class="metric-icon"><app-ui-icon name="wallet" /></span><strong class="metric-number">{{ s.mrrCop | number }}</strong><span class="metric-label">Ingreso mensual recurrente (COP)</span></div>
         <div class="card metric-card"><span class="metric-icon"><app-ui-icon name="receipt" /></span><strong class="metric-number">{{ s.revenueMonthCop | number }}</strong><span class="metric-label">Recaudo del mes (COP)</span><span class="metric-sub">{{ s.revenue30dCop | number }} en 30 días</span></div>
@@ -122,7 +127,7 @@ interface PaymentRow {
     </div>
     <div class="table-wrap">
       <table class="data-table">
-        <thead><tr><th>Fecha</th><th>Negocio</th><th>Plan / ciclo</th><th>Estado</th><th>Origen</th><th class="num">Valor base</th><th class="num">Descuento</th><th class="num">Pagado</th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Negocio</th><th>Plan / ciclo</th><th>Estado</th><th>Origen</th><th class="num">Valor base</th><th class="num">Descuento</th><th class="num">Pagado</th><th></th></tr></thead>
         <tbody>
           @for (p of payments(); track p.id) {
             <tr>
@@ -130,12 +135,14 @@ interface PaymentRow {
               <td>{{ p.tenantName }}</td>
               <td>{{ p.planName || '—' }}<span class="cell-sub">{{ cycle(p.periodMonths) }}</span></td>
               <td><span class="badge" [class]="badge(p.status)">{{ statusLabel(p.status) }}</span></td>
-              <td>{{ p.provider === 'manual' ? 'Manual' : (p.isRecurring ? 'Wompi automático' : 'Wompi') }}@if (p.notes) { <span class="cell-sub">{{ p.notes }}</span> }</td>
+              <td>{{ originLabel(p) }}@if (p.notes) { <span class="cell-sub">{{ p.notes }}</span> }@if (p.payerNote) { <span class="cell-sub">“{{ p.payerNote }}”</span> }@if (p.reviewNote) { <span class="cell-sub">Revisión: {{ p.reviewNote }}</span> }</td>
               <td class="num">{{ p.baseCop | number }}</td>
               <td class="num">@if (p.discountCop) { −{{ p.discountCop | number }} @for (d of p.discountDetail; track $index) { <span class="cell-sub">{{ d.label }}</span> } } @else { — }</td>
               <td class="num"><strong>{{ p.amountCop | number }}</strong></td>
+              <td>@if (p.hasProof) { <div class="review-actions"><app-proof-button [path]="'/admin/payments/' + p.id + '/proof'" />
+                @if (p.provider === 'nequi' && p.status === 'pending') { <button type="button" class="btn btn-primary btn-sm" [disabled]="busy()" (click)="review(p, 'approve')">Aprobar</button><button type="button" class="btn btn-outline-danger btn-sm" [disabled]="busy()" (click)="review(p, 'reject')">Rechazar</button> }</div> }</td>
             </tr>
-          } @empty { <tr><td colspan="8" class="muted">No hay pagos con esos filtros.</td></tr> }
+          } @empty { <tr><td colspan="9" class="muted">No hay pagos con esos filtros.</td></tr> }
         </tbody>
       </table>
     </div>
@@ -229,6 +236,23 @@ export class AdminBillingComponent implements OnInit {
     }).subscribe({
       next: () => { this.busy.set(false); this.notify.emit({ message: 'Suscripción actualizada.', type: 'ok' }); this.reload(); },
       error: (err) => { this.busy.set(false); this.fail(err?.error?.error ?? 'No se pudo actualizar la suscripción.'); },
+    });
+  }
+
+  originLabel(p: PaymentRow): string {
+    return p.provider === 'manual' ? 'Manual' : p.provider === 'nequi' ? 'Nequi' : p.isRecurring ? 'Wompi automático' : 'Wompi';
+  }
+
+  review(p: PaymentRow, action: 'approve' | 'reject'): void {
+    let note: string | null = null;
+    if (action === 'reject') {
+      note = prompt('Motivo del rechazo (lo verá el negocio):', 'No se pudo verificar el pago en Nequi');
+      if (note === null) return;
+    } else if (!confirm(`¿Confirmas que recibiste ${p.amountCop.toLocaleString('es-CO')} COP de ${p.tenantName} en Nequi?`)) return;
+    this.busy.set(true);
+    this.api.post(`/admin/payments/${p.id}/${action}`, { note }).subscribe({
+      next: () => { this.busy.set(false); this.notify.emit({ message: action === 'approve' ? 'Pago aprobado y suscripción renovada.' : 'Pago rechazado.', type: 'ok' }); this.reload(); },
+      error: (e) => { this.busy.set(false); this.fail(e?.error?.error ?? 'No se pudo completar la revisión.'); },
     });
   }
 

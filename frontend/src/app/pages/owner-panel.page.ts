@@ -10,6 +10,8 @@ import { UiIconComponent } from '../ui/icon.component';
 import { BrandLockupComponent } from '../ui/brand-lockup.component';
 import { OwnerSubscriptionComponent } from '../owner/owner-subscription.component';
 import { OwnerPaymentsComponent } from '../owner/owner-payments.component';
+import { OwnerNequiReviewComponent } from '../owner/owner-nequi-review.component';
+import { NequiSettingsComponent } from '../ui/nequi-settings.component';
 import { ImageUploadComponent } from '../ui/image-upload.component';
 import type { Appointment, Service } from '../core/models';
 
@@ -29,7 +31,7 @@ interface Loyalty {
 @Component({
   selector: 'app-owner-panel',
   standalone: true,
-  imports: [FormsModule, DecimalPipe, DatePipe, UiIconComponent, BrandLockupComponent, RouterLink, BusinessProfileComponent, ShareLinkComponent, OwnerSubscriptionComponent, OwnerPaymentsComponent, ImageUploadComponent],
+  imports: [FormsModule, DecimalPipe, DatePipe, UiIconComponent, BrandLockupComponent, RouterLink, BusinessProfileComponent, ShareLinkComponent, OwnerSubscriptionComponent, OwnerPaymentsComponent, ImageUploadComponent, OwnerNequiReviewComponent, NequiSettingsComponent],
   template: `
     <a class="skip-link" href="#main-content">Saltar al contenido</a>
     <header class="topbar">
@@ -215,7 +217,9 @@ interface Loyalty {
 
       @if (tab() === 'payments') {
         <section class="section-stack" aria-labelledby="payments-title">
-          <div class="section-heading"><div><h2 id="payments-title">Pagos en línea</h2><p>Conecta tu cuenta Wompi para que tus clientes paguen sus citas desde tu página.</p></div></div>
+          <div class="section-heading"><div><h2 id="payments-title">Pagos en línea</h2><p>Recibe el pago de las citas por Nequi o con tu cuenta Wompi.</p></div></div>
+          <app-owner-nequi-review (notify)="notify($event.message, $event.type)" />
+          <app-nequi-settings endpoint="/payments/tenant/nequi" title="Tu cuenta Nequi" hint="Tus clientes verán tu QR y número al reservar y subirán el comprobante; tú lo apruebas arriba. El valor (completo o anticipo) es el definido en la sección de Wompi." (notify)="notify($event.message, $event.type)" />
           <app-owner-payments (notify)="notify($event.message, $event.type)" />
         </section>
       }

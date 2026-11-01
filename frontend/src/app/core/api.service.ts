@@ -24,6 +24,11 @@ export class ApiService {
     return this.http.put<T>(`${this.base}${path}`, body);
   }
 
+  /** Descarga binaria autenticada (p. ej. comprobantes privados). */
+  getBlob(path: string): Observable<Blob> {
+    return this.http.get(`${this.base}${path}`, { responseType: 'blob' });
+  }
+
   delete<T>(path: string): Observable<T> {
     return this.http.delete<T>(`${this.base}${path}`);
   }
