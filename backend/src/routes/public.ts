@@ -84,6 +84,13 @@ export default async function publicRoutes(app: FastifyInstance): Promise<void> 
     );
     const wompi = await getTenantWompi(tenant.id);
     const payOnline = ent.features.online_payment && tenantWompiReady(wompi);
+    const nq = await query<{ nequi_enabled: boolean; nequi_number: string | null; nequi_holder: string | null; nequi_qr_url: string | null; charge_mode: 'full' | 'deposit'; deposit_pct: number }>(
+      `SELECT nequi_enabled, nequi_number, nequi_holder, nequi_qr_url, charge_mode, deposit_pct
+         FROM tenant_payment_settings WHERE tenant_id=$1`, [tenant.id]);
+    const nequiRow = nq.rows[0];
+    const nequi = ent.features.online_payment && nequiRow?.nequi_enabled && nequiRow.nequi_number
+      ? { number: nequiRow.nequi_number, holder: nequiRow.nequi_holder, qrUrl: nequiRow.nequi_qr_url }
+      : null;
     const p = profile.rows[0]!;
     return {
       name: p.name,
@@ -97,8 +104,14 @@ export default async function publicRoutes(app: FastifyInstance): Promise<void> 
       branding: branding.rows[0] ?? null,
       services: services.rows,
       staff: staff.rows,
-      onlinePayment: payOnline
-        ? { enabled: true, chargeMode: wompi!.chargeMode, depositPct: wompi!.depositPct }
+      onlinePayment: payOnline || nequi
+        ? {
+            enabled: true,
+            wompi: payOnline,
+            nequi,
+            chargeMode: nequiRow?.charge_mode ?? wompi?.chargeMode ?? 'full',
+            depositPct: nequiRow?.deposit_pct ?? wompi?.depositPct ?? 30,
+          }
         : { enabled: false },
     };
   });

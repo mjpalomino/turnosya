@@ -16,7 +16,7 @@ import { parseOr400 } from '../lib/validation.ts';
 import { decodeImageDataUrl, MAX_IMAGE_BYTES } from '../lib/image.ts';
 
 const uploadSchema = z.object({
-  kind: z.enum(['logo', 'cover', 'platform_logo', 'staff_photo']),
+  kind: z.enum(['logo', 'cover', 'platform_logo', 'staff_photo', 'nequi_qr']),
   dataUrl: z.string().min(30).max(3_000_000),
 });
 
@@ -28,7 +28,8 @@ export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
       const body = parseOr400(uploadSchema, req.body, reply);
       if (!body) return;
 
-      const isPlatform = body.kind === 'platform_logo';
+      // El QR de Nequi lo sube el superadmin (plataforma) o el dueño (su negocio).
+      const isPlatform = body.kind === 'platform_logo' || (body.kind === 'nequi_qr' && req.user.role === 'superadmin');
       if (isPlatform && req.user.role !== 'superadmin') {
         return reply.code(403).send({ error: 'No autorizado' });
       }
@@ -58,7 +59,9 @@ export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
             AND NOT EXISTS (SELECT 1 FROM tenant_branding b
                              WHERE b.logo_url = '/api/media/' || m.id OR b.cover_url = '/api/media/' || m.id)
             AND NOT EXISTS (SELECT 1 FROM platform_branding p WHERE p.logo_url = '/api/media/' || m.id)
-            AND NOT EXISTS (SELECT 1 FROM staff_profiles sp WHERE sp.photo_url = '/api/media/' || m.id)`,
+            AND NOT EXISTS (SELECT 1 FROM staff_profiles sp WHERE sp.photo_url = '/api/media/' || m.id)
+            AND NOT EXISTS (SELECT 1 FROM platform_settings ps WHERE ps.nequi_qr_url = '/api/media/' || m.id)
+            AND NOT EXISTS (SELECT 1 FROM tenant_payment_settings tp WHERE tp.nequi_qr_url = '/api/media/' || m.id)`,
         [body.kind, tenantId, id],
       );
 

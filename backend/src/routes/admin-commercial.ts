@@ -16,6 +16,12 @@
  *  - GET/PUT /settings/contact          datos de contacto del sitio principal
  *  - GET/PUT /settings/wompi            credenciales Wompi de la plataforma (secretos cifrados, nunca se devuelven)
  *  - POST    /settings/wompi/test       verifica la llave pública contra Wompi
+ *  - GET/PUT /settings/nequi            número, titular y QR de Nequi de la plataforma
+ *
+ *  Pagos por Nequi (con comprobante)
+ *  - GET  /payments/:id/proof           imagen del comprobante (privada)
+ *  - POST /payments/:id/approve         aprueba y renueva la suscripción
+ *  - POST /payments/:id/reject          rechaza con motivo
  *  - GET     /plan-features             catálogo de funcionalidades por plan
  */
 import type { FastifyInstance } from 'fastify';
@@ -29,6 +35,7 @@ import { getAcceptanceTokens, newReference } from '../lib/wompi.ts';
 import { PLAN_FEATURES } from '../lib/plan-features.ts';
 import { quotePrice } from '../lib/pricing.ts';
 import { applyApprovedPayment } from '../lib/subscription-billing.ts';
+import { nequiSettingsSchema, PROOF_HEADERS, validateNequiSettings } from '../lib/nequi.ts';
 
 const emptyToNull = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? null : v);
 const optText = (max: number) => z.preprocess(emptyToNull, z.string().trim().max(max).nullable().optional());
@@ -115,7 +122,8 @@ export default async function adminCommercialRoutes(app: FastifyInstance): Promi
                    AND trial_ends_at BETWEEN now() AND now() + interval '7 days')::int AS "trialsEndingNext7d",
          (SELECT count(*) FROM subscriptions WHERE status='past_due')::int AS "pastDue",
          (SELECT count(*) FROM subscriptions WHERE auto_renew)::int AS "autoRenew",
-         (SELECT count(*) FROM referrals WHERE status IN ('converted','rewarded'))::int AS "referralsConverted"`,
+         (SELECT count(*) FROM referrals WHERE status IN ('converted','rewarded'))::int AS "referralsConverted",
+         (SELECT count(*) FROM subscription_payments WHERE provider='nequi' AND status='pending')::int AS "nequiToReview"`,
     );
     const byStatus = await query(`SELECT status, count(*)::int AS n FROM subscriptions GROUP BY status ORDER BY status`);
     const byPlan = await query(
@@ -181,6 +189,7 @@ export default async function adminCommercialRoutes(app: FastifyInstance): Promi
               sp.discount_in_cents / 100 AS "discountCop", sp.discount_detail AS "discountDetail",
               sp.period_months AS "periodMonths", sp.is_recurring AS "isRecurring",
               sp.wompi_transaction_id AS "wompiTransactionId", sp.notes,
+              (sp.proof_id IS NOT NULL) AS "hasProof", sp.payer_note AS "payerNote", sp.review_note AS "reviewNote",
               sp.created_at AS "createdAt", sp.updated_at AS "updatedAt",
               t.id AS "tenantId", t.name AS "tenantName", p.name AS "planName"
          FROM subscription_payments sp
@@ -356,5 +365,84 @@ export default async function adminCommercialRoutes(app: FastifyInstance): Promi
     } catch {
       return reply.code(502).send({ error: 'Wompi no reconoció la llave pública en este ambiente' });
     }
+  });
+
+  // ------------------------------------------------------------------
+  // Nequi de la plataforma
+  // ------------------------------------------------------------------
+  app.get('/settings/nequi', sa, async () => {
+    const { rows } = await query(
+      `SELECT nequi_enabled AS enabled, nequi_number AS number, nequi_holder AS holder, nequi_qr_url AS "qrUrl"
+         FROM platform_settings WHERE id=1`,
+    );
+    return rows[0];
+  });
+
+  app.put('/settings/nequi', sa, async (req, reply) => {
+    const b = parseOr400(nequiSettingsSchema, req.body, reply);
+    if (!b) return;
+    const v = validateNequiSettings(b);
+    if (!v.ok) return reply.code(400).send({ error: v.error });
+    await query(
+      `UPDATE platform_settings SET nequi_enabled=$1, nequi_number=$2, nequi_holder=$3, nequi_qr_url=$4, updated_at=now() WHERE id=1`,
+      [b.enabled, v.number, b.holder ?? null, b.qrUrl ?? null],
+    );
+    return { ok: true };
+  });
+
+  // ------------------------------------------------------------------
+  // Revisión de pagos por Nequi
+  // ------------------------------------------------------------------
+  const reviewSchema = z.object({ note: z.preprocess((v) => (typeof v === 'string' && !v.trim() ? null : v), z.string().trim().max(200).nullable().optional()) });
+
+  app.get('/payments/:id/proof', sa, async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    if (!z.string().uuid().safeParse(id).success) return reply.code(404).send({ error: 'No encontrado' });
+    const { rows } = await query<{ mime: string; data: Buffer }>(
+      `SELECT pp.mime, pp.data FROM subscription_payments sp JOIN payment_proofs pp ON pp.id = sp.proof_id WHERE sp.id=$1`,
+      [id],
+    );
+    if (!rows[0]) return reply.code(404).send({ error: 'Sin comprobante' });
+    return reply.headers({ ...PROOF_HEADERS, 'Content-Type': rows[0].mime }).send(rows[0].data);
+  });
+
+  app.post('/payments/:id/approve', sa, async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const b = parseOr400(reviewSchema, req.body ?? {}, reply);
+    if (!b) return;
+    if (!z.string().uuid().safeParse(id).success) return reply.code(404).send({ error: 'No encontrado' });
+    const result = await withTransaction(async (client) => {
+      const r = await client.query<{ id: string; tenant_id: string; plan_id: string | null; period_months: number; status: string; provider: string; referral_id: string | null; reward_referral_id: string | null }>(
+        `SELECT id, tenant_id, plan_id, period_months, status, provider, referral_id, reward_referral_id
+           FROM subscription_payments WHERE id=$1 FOR UPDATE`,
+        [id],
+      );
+      const p = r.rows[0];
+      if (!p) return 'not_found';
+      if (p.provider !== 'nequi' || p.status !== 'pending') return 'invalid';
+      await client.query(
+        `UPDATE subscription_payments SET status='approved', reviewed_by=$1, reviewed_at=now(), review_note=$2, updated_at=now() WHERE id=$3`,
+        [req.user.id, b.note ?? null, id],
+      );
+      await applyApprovedPayment(client, p);
+      return 'ok';
+    });
+    if (result === 'not_found') return reply.code(404).send({ error: 'Pago no encontrado' });
+    if (result === 'invalid') return reply.code(400).send({ error: 'Solo se aprueban pagos Nequi pendientes' });
+    return { ok: true };
+  });
+
+  app.post('/payments/:id/reject', sa, async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const b = parseOr400(reviewSchema, req.body ?? {}, reply);
+    if (!b) return;
+    if (!z.string().uuid().safeParse(id).success) return reply.code(404).send({ error: 'No encontrado' });
+    const { rowCount } = await query(
+      `UPDATE subscription_payments SET status='declined', reviewed_by=$1, reviewed_at=now(), review_note=$2, updated_at=now()
+        WHERE id=$3 AND provider='nequi' AND status='pending'`,
+      [req.user.id, b.note ?? 'Comprobante no válido', id],
+    );
+    if (!rowCount) return reply.code(400).send({ error: 'Solo se rechazan pagos Nequi pendientes' });
+    return { ok: true };
   });
 }

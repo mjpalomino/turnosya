@@ -54,7 +54,16 @@ export default async function customerRoutes(app: FastifyInstance): Promise<void
               a.payment_status AS "paymentStatus", s.price_cop AS "priceCop",
               (tps.enabled AND tps.wompi_public_key IS NOT NULL AND tps.wompi_integrity_enc IS NOT NULL
                AND a.status IN ('booked','confirmed') AND a.payment_status <> 'paid' AND s.price_cop > 0
-               AND a.starts_at > now()) AS "canPay"
+               AND a.starts_at > now()) AS "canPay",
+              COALESCE(tps.nequi_enabled AND tps.nequi_number IS NOT NULL
+               AND a.status IN ('booked','confirmed') AND a.payment_status = 'none' AND s.price_cop > 0
+               AND a.starts_at > now(), false) AS "canPayNequi",
+              CASE WHEN tps.nequi_enabled THEN json_build_object('number', tps.nequi_number, 'holder', tps.nequi_holder,
+                     'qrUrl', tps.nequi_qr_url, 'chargeMode', tps.charge_mode, 'depositPct', tps.deposit_pct) END AS "nequi",
+              (SELECT x.review_note FROM appointment_payments x WHERE x.appointment_id = a.id AND x.provider='nequi'
+                ORDER BY x.created_at DESC LIMIT 1) AS "nequiReviewNote",
+              (SELECT x.status FROM appointment_payments x WHERE x.appointment_id = a.id AND x.provider='nequi'
+                ORDER BY x.created_at DESC LIMIT 1) AS "nequiStatus"
        FROM appointments a
        LEFT JOIN tenant_payment_settings tps ON tps.tenant_id = a.tenant_id
        JOIN tenants t ON t.id=a.tenant_id

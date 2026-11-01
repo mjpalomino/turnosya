@@ -11,6 +11,8 @@
  *  - GET  /api/billing/payments        (owner) historial de pagos con descuentos
  *  - GET  /api/billing/referrals       (owner) mi código, mis referidos y recompensas
  *  - POST /api/billing/referral        (owner) aplicar un código de referido antes del primer pago
+ *  - GET  /api/billing/nequi           (owner) número, titular y QR de Nequi de la plataforma
+ *  - POST /api/billing/nequi           (owner) reporta un pago Nequi con comprobante (queda en revisión)
  *
  * Las credenciales de Wompi salen del panel del superadmin o, si no están, del entorno.
  */
@@ -30,6 +32,12 @@ import {
   getActivePlan, getReferralSettings, quoteForTenant,
 } from '../lib/subscription-billing.ts';
 import { getEntitlements, PLAN_FEATURES } from '../lib/plan-features.ts';
+import { decodeProof, proofSchema, saveProof } from '../lib/nequi.ts';
+
+const nequiPaySchema = proofSchema.extend({
+  planId: z.string().uuid(),
+  months: z.union([z.literal(1), z.literal(3), z.literal(6)]).default(1),
+});
 
 const cycleSchema = z.union([z.literal(1), z.literal(3), z.literal(6)]);
 
@@ -239,7 +247,7 @@ export default async function billingRoutes(app: FastifyInstance): Promise<void>
   app.get('/payments', owner, async (req) => {
     const { rows } = await query(
       `SELECT sp.reference, sp.amount_in_cents AS "amountInCents", sp.currency, sp.status,
-              sp.period_months AS "periodMonths", sp.created_at AS "createdAt",
+              sp.period_months AS "periodMonths", sp.created_at AS "createdAt", sp.review_note AS "reviewNote",
               sp.discount_in_cents AS "discountInCents", sp.discount_detail AS "discountDetail",
               sp.provider, p.name AS "planName"
          FROM subscription_payments sp LEFT JOIN plans p ON p.id = sp.plan_id
@@ -292,5 +300,48 @@ export default async function billingRoutes(app: FastifyInstance): Promise<void>
     if (!check.ok) return reply.code(400).send({ error: check.error });
     await attachReferral({ query: (t, p) => query(t, p) }, tenantId, body.code, check);
     return { ok: true, referrerName: check.referrerName, discountPct: check.settings.referralDiscountPct };
+  });
+
+  // --- Nequi (pago manual con comprobante) ---
+  app.get('/nequi', owner, async () => {
+    const { rows } = await query<{ enabled: boolean; number: string | null; holder: string | null; qrUrl: string | null }>(
+      `SELECT nequi_enabled AS enabled, nequi_number AS number, nequi_holder AS holder, nequi_qr_url AS "qrUrl"
+         FROM platform_settings WHERE id=1`,
+    );
+    const r = rows[0];
+    return r && r.enabled && r.number ? r : { enabled: false };
+  });
+
+  app.post('/nequi', { ...owner, bodyLimit: 4 * 1024 * 1024 }, async (req, reply) => {
+    const body = parseOr400(nequiPaySchema, req.body, reply);
+    if (!body) return;
+    const tenantId = req.user.tenantId!;
+    const cfg = await query<{ nequi_enabled: boolean; nequi_number: string | null }>(
+      'SELECT nequi_enabled, nequi_number FROM platform_settings WHERE id=1');
+    if (!cfg.rows[0]?.nequi_enabled || !cfg.rows[0]?.nequi_number) {
+      return reply.code(503).send({ error: 'El pago por Nequi no está disponible' });
+    }
+    const pending = await query(
+      `SELECT 1 FROM subscription_payments WHERE tenant_id=$1 AND provider='nequi' AND status='pending' LIMIT 1`, [tenantId]);
+    if (pending.rowCount) return reply.code(409).send({ error: 'Ya tienes un pago Nequi en revisión. Te avisaremos cuando se apruebe.' });
+    const plan = await getActivePlan(body.planId);
+    if (!plan) return reply.code(404).send({ error: 'Plan no encontrado' });
+    const img = decodeProof(body.proofDataUrl);
+    if ('error' in img) return reply.code(400).send({ error: img.error });
+    const q = await quoteForTenant(tenantId, plan, body.months);
+    if (q.totalCop <= 0) return reply.code(400).send({ error: 'El valor a pagar es 0' });
+    const reference = newReference(tenantId, 'neq');
+    await withTransaction(async (client) => {
+      const proofId = await saveProof(client, tenantId, req.user.id, img);
+      await client.query(
+        `INSERT INTO subscription_payments
+           (tenant_id, plan_id, reference, amount_in_cents, currency, status, provider, period_months,
+            base_amount_in_cents, discount_in_cents, discount_detail, referral_id, reward_referral_id, proof_id, payer_note)
+         VALUES ($1,$2,$3,$4,'COP','pending','nequi',$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [tenantId, plan.id, reference, q.totalCop * 100, body.months, q.baseCop * 100, q.discountCop * 100,
+         JSON.stringify(q.discounts), q.referralId, q.rewardReferralId, proofId, body.note ?? null],
+      );
+    });
+    return reply.code(201).send({ ok: true, reference, amountCop: q.totalCop, status: 'pending' });
   });
 }

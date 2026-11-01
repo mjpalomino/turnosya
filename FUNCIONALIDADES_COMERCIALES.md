@@ -29,7 +29,7 @@ Basado en la revisión del código (backend Fastify + frontend Angular PWA), ver
 | Agenda de todo el equipo en desorden | Panel con la agenda del día/semana de cada empleado |
 | Clientes que no vuelven | Tarjeta de fidelización con sellos y premio (QR de un solo uso) |
 | No sé cuánto facturo | Panel de resumen y reportes ⚙️ |
-| Cobrar es engorroso | Pagos en línea con Wompi: tarjeta, PSE, Nequi (según tu cuenta Wompi) 🆕 |
+| Cobrar es engorroso | Pagos en línea con Wompi (tarjeta, PSE…) o directo a tu Nequi con QR 🆕 |
 
 ## 3. Funcionalidades por perfil
 
@@ -42,7 +42,7 @@ Basado en la revisión del código (backend Fastify + frontend Angular PWA), ver
 - ✅ Califica y deja reseñas después de la cita ⚙️.
 - ✅ Tarjeta de fidelización: suma sellos escaneando un QR en el local ⚙️.
 - 🆕 Ve la **foto y especialidad** de quien lo va a atender ⚙️.
-- 🆕 **Paga en línea** su cita o un anticipo con Wompi ⚙️.
+- 🆕 **Paga en línea** su cita o un anticipo con Wompi o **Nequi** (QR + comprobante) ⚙️.
 - ✅ App instalable (PWA) en el celular.
 
 ### Para el dueño del negocio
@@ -59,6 +59,8 @@ Basado en la revisión del código (backend Fastify + frontend Angular PWA), ver
 - ✅ Recordatorios por correo automáticos ⚙️.
 - 🆕 **Datos de contacto completos en el micrositio**: WhatsApp, teléfono, correo, dirección, Instagram, **Facebook, TikTok, sitio web y horario de atención**.
 - 🆕 **Pagos en línea con su propia cuenta Wompi**: cobro del valor completo o de un anticipo (%). El dinero llega directo al negocio.
+- 🆕 **Cobro por Nequi**: carga tu QR y número; el cliente sube el comprobante y tú lo apruebas.
+- 🆕 **Paga tu suscripción por Nequi** con QR y comprobante.
 - 🆕 **Suscripción flexible**: mensual, trimestral o semestral, con descuento por pagar por adelantado.
 - 🆕 **Cobro automático** de la suscripción con tarjeta guardada (en el ciclo elegido).
 - 🆕 **Código de referido propio** para invitar a otros negocios y ganar descuento.
@@ -110,7 +112,7 @@ Barbería · Peluquería y belleza · Uñas y manicure · Spa y bienestar · Sal
 
 1. **Carrusel "Antes / después"**: libreta y WhatsApp → agenda en línea.
 2. **Reel "3 pasos"**: busca, elige la hora, listo.
-3. **Pieza "Cobra al reservar"**: anticipo con Wompi para reducir ausencias.
+3. **Pieza "Cobra al reservar"**: anticipo con Wompi o con tu QR de Nequi para reducir ausencias.
 4. **Pieza "Ahorra hasta X % pagando semestral"** (usar los % reales configurados).
 5. **Pieza "Refiere y gana"**: código de referido, X % para ti y X % para tu colega.
 6. **Pieza "Conoce a tu barbero"**: fotos del equipo en el micrositio.

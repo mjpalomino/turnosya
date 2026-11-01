@@ -109,9 +109,31 @@ La migración es aditiva; se probó sobre una base vacía y sobre una base con d
 - Pruebas E2E de negocio con usuarios reales de QA y revisión de textos/precios comerciales.
 - Revisión de seguridad del manejo de secretos por el responsable de infraestructura.
 
-## 7. Mejoras sugeridas
+## 7. Pagos con Nequi (migración `007_nequi.sql`)
+
+Nequi no avisa los pagos a terceros, así que el flujo es **manual con comprobante**:
+
+| Quién paga | A quién | Qué hace quien paga | Quién aprueba | Efecto al aprobar |
+|---|---|---|---|---|
+| Negocio (suscripción) | Plataforma | Elige plan y ciclo › "Pagar con Nequi" › escanea QR o transfiere al número › sube la captura | Superadmin › Suscripciones y pagos (Ver comprobante › Aprobar/Rechazar) | Renueva el plan por el ciclo pagado, con descuentos y referidos |
+| Cliente (cita) | Negocio | Tras reservar o en "Mis citas" › "Pagar con Nequi" › sube la captura | Dueño › Pagos en línea › Pagos por Nequi | La cita queda pagada |
+
+- **Configuración**: superadmin › Pasarela › Nequi de la plataforma; dueño › Pagos en línea › Tu cuenta Nequi. Número (celular de 10 dígitos que inicia por 3), titular y QR (imagen descargada de la app Nequi › Recibir con QR).
+- **Valor**: suscripción = cotización del plan y ciclo (con descuentos). Cita = valor completo o anticipo según el modo de cobro del negocio (compartido con Wompi).
+- **Comprobantes privados** (`payment_proofs`): solo los ve el superadmin (suscripciones) o el dueño de ese negocio (citas); se sirven con `Cache-Control: no-store`. El QR sí es público.
+- **Reglas**: un comprobante pendiente a la vez por negocio (suscripción) y por cita; rechazo con motivo visible para quien pagó, que puede reenviar; aprobar/rechazar solo pagos Nequi pendientes (idempotente).
+- **Plan**: Nequi para citas usa la misma funcionalidad `online_payment` del plan.
+
+Endpoints: `GET/PUT /api/admin/settings/nequi`, `GET /api/admin/payments/:id/proof`, `POST /api/admin/payments/:id/approve|reject`, `GET/POST /api/billing/nequi`, `GET/PUT /api/payments/tenant/nequi`, `POST /api/payments/appointments/:id/nequi`, `GET /api/payments/tenant/review`, `GET /api/payments/tenant/payments/:id/proof`, `POST /api/payments/tenant/payments/:id/approve|reject`.
+
+Pruebas: 3 unitarias nuevas (número, configuración, comprobante) y 6 escenarios de integración (configurar, pagar, duplicado, privacidad del comprobante, aprobar/rechazar y reenviar). Total backend: **39/39 unitarias**, **28/28 integración**.
+
+**Riesgo**: la aprobación depende de que quien revisa confirme el ingreso en su app Nequi (un comprobante puede ser falso). Recomendación: aprobar solo tras verlo en el movimiento de Nequi.
+
+## 8. Mejoras sugeridas
 - Correo al superadmin y al dueño cuando un pago falla o una suscripción pasa a `past_due`.
 - Exportar pagos a CSV/Excel desde el panel.
 - Implementar `reports` (ingresos por servicio/empleado) y `featured` (orden en el directorio).
 - Notificar al negocio cuando se convierte un referido suyo.
 - Reembolsos/anulaciones de pagos de citas desde el panel.
+- Correo al superadmin/dueño cuando llega un comprobante Nequi y a quien pagó cuando se aprueba o rechaza.

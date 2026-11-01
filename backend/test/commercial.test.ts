@@ -148,3 +148,26 @@ test('prefijo de llaves según ambiente', () => {
   assert.equal(keyMatchesEnv('pub_prod_abc', 'pub', 'test'), false);
   assert.equal(keyMatchesEnv('prv_prod_abc', 'prv', 'prod'), true);
 });
+
+// ---------------- Nequi ----------------
+const { normalizeNequiNumber, validateNequiSettings, decodeProof } = await import('../src/lib/nequi.ts');
+
+test('normaliza el número Nequi (celular colombiano)', () => {
+  assert.equal(normalizeNequiNumber('300 123 4567'), '3001234567');
+  assert.equal(normalizeNequiNumber('+57 310-555-0000'), '3105550000');
+  assert.equal(normalizeNequiNumber('6041234567'), null); // fijo
+  assert.equal(normalizeNequiNumber('30012345'), null);
+});
+
+test('activar Nequi exige número válido; el QR es opcional', () => {
+  assert.equal(validateNequiSettings({ enabled: true, number: null }).ok, false);
+  assert.equal(validateNequiSettings({ enabled: false, number: '123' }).ok, false);
+  const v = validateNequiSettings({ enabled: true, number: '300 000 0000', holder: 'Negocio', qrUrl: null });
+  assert.deepEqual(v, { ok: true, number: '3000000000' });
+});
+
+test('el comprobante debe ser una imagen real', () => {
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  assert.equal('error' in decodeProof(png), false);
+  assert.equal('error' in decodeProof('data:image/png;base64,' + Buffer.from('<svg>').toString('base64')), true);
+});
